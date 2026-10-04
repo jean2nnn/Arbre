@@ -17,9 +17,11 @@
     .choix { margin: 4px 0; }
     .choix span { display: inline-block; width: 110px; }
     .choix input { display: inline-block; width: calc(100% - 120px); box-sizing: border-box; padding: 6px; margin: 3px 0; }
-    #arbre-zone { overflow: auto; height: 60vh; border: 1px solid #aaa; background: #f6f8f4; touch-action: pan-x pan-y; }
-    .boite { position: absolute; width: 120px; height: 56px; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; font-size: 0.8em; padding: 4px; text-align: center; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+    #arbre-zone { overflow: auto; height: 58vh; border: 1px solid #aaa; background: #f6f8f4; touch-action: pan-x pan-y; }
+    .boite { position: absolute; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .boite.centre { background: #c8e6c9; border-width: 3px; }
+    .boite .texte { width: 100%; height: 100%; box-sizing: border-box; padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; text-align: center; line-height: 1.15; overflow-wrap: anywhere; font-size: 0.8em; }
+    .boite .pm { position: absolute; right: -9px; top: -9px; width: 22px; height: 22px; padding: 0; margin: 0; border-radius: 11px; border: 1px solid #2e7d32; background: white; color: #2e7d32; font-size: 15px; line-height: 1; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -73,11 +75,16 @@
     <h2>Arbre</h2>
     <div id="choix-aller"></div>
     <p>
-      <button onclick="changerZoom(0.8)">－</button>
-      <button onclick="changerZoom(1.25)">＋</button>
+      <button onclick="changerZoom(0.8)">Zoom −</button>
+      <button onclick="changerZoom(1.25)">Zoom +</button>
       <button onclick="ajusterZoom()">Ajuster</button>
     </p>
-    <p>Touche une personne pour te centrer sur elle. Fais glisser pour te déplacer, pince avec deux doigts pour zoomer.</p>
+    <p>
+      <button onclick="reduire()">Réduire</button>
+      <button onclick="elargir()">Élargir</button>
+      <button onclick="toutAfficher()">Tout</button>
+    </p>
+    <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Le petit + ou − d'une case développe ou replie sa branche. Élargir et Réduire affichent plus ou moins de parenté.</p>
     <div id="arbre-zone"></div>
   </div>
 
@@ -88,15 +95,17 @@
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
 
-    const LARGEUR_BOITE = 120;
-    const HAUTEUR_BOITE = 56;
-    const ESPACE = 16;
-    const ECART_COUPLE = 40;
-    const HAUTEUR_LIGNE = 120;
+    const LARGEUR_BOITE = 150;
+    const HAUTEUR_BOITE = 80;
+    const ESPACE = 20;
+    const ECART_COUPLE = 44;
+    const HAUTEUR_LIGNE = 130;
 
     let zoom = 1;
     let personneCentrale = null;
     let historiqueArbre = [];
+    let racineArbre = null;
+    let ouverts = null;
     let enveloppeArbre = null;
     let planArbre = null;
     let largeurArbre = 0;
@@ -138,7 +147,7 @@
     }
 
     function libelle(p) {
-      let texte = p.prenom + " " + p.nom;
+      let texte = (p.prenom + " " + p.nom).trim();
       if (p.nomJeuneFille) texte += " (née " + p.nomJeuneFille + ")";
       const d = dates(p);
       if (d) texte += ", " + d;
@@ -256,7 +265,7 @@
       if (choixAjout.conjoint) definirConjoint(personne, choixAjout.conjoint);
       sauvegarder();
       document.getElementById("message").textContent =
-        "✔ " + personne.prenom + " " + personne.nom + " ajouté(e).";
+        "✔ " + (personne.prenom + " " + personne.nom).trim() + " ajouté(e).";
       document.getElementById("prenom").value = "";
       document.getElementById("nom").value = "";
       document.getElementById("jeunefille").value = "";
@@ -295,6 +304,13 @@
       lien.click();
     }
 
+    function reinitialiserArbre() {
+      racineArbre = null;
+      ouverts = null;
+      personneCentrale = null;
+      historiqueArbre = [];
+    }
+
     function importer(event) {
       const fichier = event.target.files[0];
       if (!fichier) return;
@@ -307,6 +323,7 @@
           personnes = donnees;
           preparer();
           derniereSuppression = null;
+          reinitialiserArbre();
           sauvegarder();
           afficher();
           rechercher();
@@ -383,7 +400,7 @@
       fiche.innerHTML = "";
 
       const titre = document.createElement("h3");
-      titre.textContent = personne.prenom + " " + personne.nom;
+      titre.textContent = (personne.prenom + " " + personne.nom).trim();
       fiche.appendChild(titre);
 
       if (personne.nomJeuneFille) {
@@ -433,7 +450,7 @@
       const sup = document.createElement("button");
       sup.textContent = "Supprimer";
       sup.onclick = () => {
-        if (!confirm("Supprimer " + personne.prenom + " " + personne.nom + " ?")) return;
+        if (!confirm("Supprimer " + (personne.prenom + " " + personne.nom).trim() + " ?")) return;
         supprimer(personne);
         rechercher();
       };
@@ -448,7 +465,7 @@
       fiche.innerHTML = "";
 
       const titre = document.createElement("h3");
-      titre.textContent = "Modifier " + personne.prenom + " " + personne.nom;
+      titre.textContent = "Modifier " + (personne.prenom + " " + personne.nom).trim();
 
       const prenom = creerChampEtiquete("Prénom", personne.prenom);
       const nom = creerChampEtiquete("Nom", personne.nom);
@@ -562,9 +579,52 @@
       remplirChoix();
     }
 
-    function calculerCarte() {
+    function construireVoisins() {
       const index = new Map();
       for (const p of personnes) index.set(String(p.id), p);
+      const voisins = new Map();
+      for (const p of personnes) voisins.set(p, []);
+
+      const lier = (a, b) => {
+        if (a === b) return;
+        if (!voisins.get(a).includes(b)) voisins.get(a).push(b);
+        if (!voisins.get(b).includes(a)) voisins.get(b).push(a);
+      };
+
+      for (const p of personnes) {
+        for (const id of [p.pereId, p.mereId]) {
+          const parent = index.get(String(id));
+          if (parent) lier(p, parent);
+        }
+        const c = index.get(String(p.conjointId));
+        if (c && String(c.conjointId) === String(p.id)) lier(p, c);
+      }
+      return voisins;
+    }
+
+    function calculerVisibles() {
+      const voisins = construireVoisins();
+      if (!ouverts) ouverts = new Set(voisins.get(racineArbre) || []);
+
+      const profondeur = new Map();
+      profondeur.set(racineArbre, 0);
+      const file = [racineArbre];
+      for (let i = 0; i < file.length; i++) {
+        const p = file[i];
+        if (p !== racineArbre && !ouverts.has(p)) continue;
+        for (const v of (voisins.get(p) || [])) {
+          if (!profondeur.has(v)) {
+            profondeur.set(v, profondeur.get(p) + 1);
+            file.push(v);
+          }
+        }
+      }
+      return { visibles: file, profondeur: profondeur, voisins: voisins };
+    }
+
+    function calculerCarte(liste) {
+      const index = new Map();
+      for (const p of liste) index.set(String(p.id), p);
       const lire = id => index.get(String(id));
       const conjointLocal = p => {
         const c = lire(p.conjointId);
@@ -572,19 +632,19 @@
       };
 
       const enfantsParPersonne = new Map();
-      for (const p of personnes) {
+      for (const p of liste) {
         for (const id of [p.pereId, p.mereId]) {
           const parent = lire(id);
           if (parent && parent !== p) {
             if (!enfantsParPersonne.has(parent)) enfantsParPersonne.set(parent, []);
-            const liste = enfantsParPersonne.get(parent);
-            if (!liste.includes(p)) liste.push(p);
+            const enfants = enfantsParPersonne.get(parent);
+            if (!enfants.includes(p)) enfants.push(p);
           }
         }
       }
 
       const gen = new Map();
-      for (const depart of personnes) {
+      for (const depart of liste) {
         if (gen.has(depart)) continue;
         gen.set(depart, 0);
         const composante = [depart];
@@ -613,7 +673,7 @@
 
       const uniteDe = new Map();
       const unites = [];
-      for (const p of personnes) {
+      for (const p of liste) {
         if (uniteDe.has(p)) continue;
         const c = conjointLocal(p);
         const membres = (c && !uniteDe.has(c)) ? [p, c] : [p];
@@ -722,6 +782,8 @@
     function mettreCentre(personne, doux) {
       const boite = boitesArbre.get(personne);
       if (!boite) {
+        racineArbre = personne;
+        ouverts = null;
         personneCentrale = personne;
         afficherArbre();
         return;
@@ -754,8 +816,78 @@
       if (personneCentrale && personneCentrale !== personne) {
         historiqueArbre.push(personneCentrale);
       }
+      racineArbre = personne;
+      ouverts = null;
       personneCentrale = personne;
       aller("arbre");
+    }
+
+    function allerAPersonne(personne) {
+      if (boitesArbre.has(personne)) {
+        centrer(personne);
+        return;
+      }
+      if (personneCentrale && personneCentrale !== personne) {
+        historiqueArbre.push(personneCentrale);
+      }
+      racineArbre = personne;
+      ouverts = null;
+      personneCentrale = personne;
+      afficherArbre();
+    }
+
+    function ouvrirFiche(personne) {
+      aller("rechercher");
+      document.getElementById("recherche").value = "";
+      document.getElementById("resultats").innerHTML = "";
+      afficherFiche(personne);
+    }
+
+    function appuiLong(personne) {
+      if (confirm("Ouvrir la fiche de " + libelle(personne) + " ?")) {
+        ouvrirFiche(personne);
+      }
+    }
+
+    function basculer(personne) {
+      if (ouverts.has(personne)) {
+        ouverts.delete(personne);
+      } else {
+        ouverts.add(personne);
+      }
+      personneCentrale = personne;
+      afficherArbre();
+    }
+
+    function elargir() {
+      if (personnes.length === 0 || !racineArbre) return;
+      const etat = calculerVisibles();
+      for (const p of etat.visibles) ouverts.add(p);
+      afficherArbre();
+    }
+
+    function reduire() {
+      if (personnes.length === 0 || !racineArbre) return;
+      const etat = calculerVisibles();
+      let max = 0;
+      for (const p of etat.visibles) {
+        if (p !== racineArbre && ouverts.has(p)) {
+          max = Math.max(max, etat.profondeur.get(p));
+        }
+      }
+      if (max === 0) return;
+      for (const p of etat.visibles) {
+        if (p !== racineArbre && ouverts.has(p) && etat.profondeur.get(p) === max) {
+          ouverts.delete(p);
+        }
+      }
+      afficherArbre();
+    }
+
+    function toutAfficher() {
+      if (personnes.length === 0) return;
+      ouverts = new Set(personnes);
+      afficherArbre();
     }
 
     function appliquerZoom(nouveau) {
@@ -799,18 +931,30 @@
       positionsArbre = new Map();
 
       if (personnes.length === 0) {
+        racineArbre = null;
+        ouverts = null;
         zone.textContent = "Aucune personne enregistrée.";
         return;
       }
-      if (!personneCentrale || !personnes.includes(personneCentrale)) {
-        personneCentrale = personnes[0];
+      if (!racineArbre || !personnes.includes(racineArbre)) {
+        racineArbre = personnes[0];
+        ouverts = null;
+        personneCentrale = null;
+      }
+
+      const etat = calculerVisibles();
+      const visibles = etat.visibles;
+      const profondeur = etat.profondeur;
+      const voisins = etat.voisins;
+      if (!personneCentrale || !profondeur.has(personneCentrale)) {
+        personneCentrale = racineArbre;
       }
 
       zoneAller.appendChild(creerChoix("Aller à", "", [], p => {
-        if (p) centrer(p);
+        if (p) allerAPersonne(p);
       }));
 
-      const carte = calculerCarte();
+      const carte = calculerCarte(visibles);
       const positions = carte.positions;
       positionsArbre = positions;
       const largeur = carte.largeur;
@@ -853,7 +997,7 @@
         }
       }
 
-      for (const p of personnes) {
+      for (const p of visibles) {
         const pos = positions.get(p);
         const pere = carte.lire(p.pereId);
         const mere = carte.lire(p.mereId);
@@ -871,28 +1015,87 @@
         }
       }
 
-      for (const p of personnes) {
+      for (const p of visibles) {
         const pos = positions.get(p);
         const div = document.createElement("div");
         div.className = p === personneCentrale ? "boite centre" : "boite";
         div.style.left = (pos.x - LARGEUR_BOITE / 2) + "px";
         div.style.top = pos.y + "px";
+        div.style.width = LARGEUR_BOITE + "px";
+        div.style.height = HAUTEUR_BOITE + "px";
+        div.title = libelle(p);
 
+        const texte = document.createElement("div");
+        texte.className = "texte";
+
+        const nomComplet = (p.prenom + " " + p.nom).trim();
         const nom = document.createElement("strong");
-        nom.textContent = p.prenom + " " + p.nom;
-        div.appendChild(nom);
+        nom.textContent = nomComplet;
+        texte.appendChild(nom);
 
         const details = [];
         if (p.nomJeuneFille) details.push("née " + p.nomJeuneFille);
         const d = dates(p);
         if (d) details.push(d);
-        if (details.length > 0) {
+        for (const ligne of details) {
           const petit = document.createElement("span");
-          petit.textContent = details.join(" – ");
-          div.appendChild(petit);
+          petit.textContent = ligne;
+          texte.appendChild(petit);
         }
 
-        div.onclick = () => centrer(p);
+        const longueur = Math.max(nomComplet.length, ...details.map(l => l.length));
+        texte.style.fontSize = longueur > 26 ? "0.68em" : longueur > 18 ? "0.74em" : "0.8em";
+        div.appendChild(texte);
+
+        if (p !== racineArbre) {
+          const vois = voisins.get(p) || [];
+          let symbole = "";
+          if (ouverts.has(p)) {
+            if (vois.length > 1) symbole = "−";
+          } else if (vois.some(v => !profondeur.has(v))) {
+            symbole = "+";
+          }
+          if (symbole) {
+            const pm = document.createElement("button");
+            pm.className = "pm";
+            pm.textContent = symbole;
+            pm.addEventListener("pointerdown", e => e.stopPropagation());
+            pm.onclick = e => {
+              e.stopPropagation();
+              basculer(p);
+            };
+            div.appendChild(pm);
+          }
+        }
+
+        let minuteur = null;
+        let appuiLongFait = false;
+        const arreterMinuteur = () => {
+          if (minuteur) {
+            clearTimeout(minuteur);
+            minuteur = null;
+          }
+        };
+        div.addEventListener("pointerdown", () => {
+          appuiLongFait = false;
+          minuteur = setTimeout(() => {
+            minuteur = null;
+            appuiLongFait = true;
+            appuiLong(p);
+          }, 600);
+        });
+        div.addEventListener("pointerup", arreterMinuteur);
+        div.addEventListener("pointercancel", arreterMinuteur);
+        div.addEventListener("pointerleave", arreterMinuteur);
+        div.addEventListener("contextmenu", e => e.preventDefault());
+        div.onclick = () => {
+          if (appuiLongFait) {
+            appuiLongFait = false;
+            return;
+          }
+          centrer(p);
+        };
+
         boitesArbre.set(p, div);
         plan.appendChild(div);
       }
