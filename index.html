@@ -5,34 +5,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mon arbre</title>
   <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#2e7d32">
+  <meta name="theme-color" content="#2e7d32">
+  <style>
+    body { font-family: sans-serif; margin: 16px auto; max-width: 700px; padding: 0 12px; }
+    .menu button { display: block; width: 100%; padding: 22px; margin: 14px 0; font-size: 1.3em; }
+    input, select, button { font-size: 1em; margin: 3px; }
+    li { margin: 10px 0; }
+    #arbre-zone { overflow: auto; height: 70vh; border: 1px solid #aaa; background: #f6f8f4; }
+.boite { position: absolute; width: 120px; height: 56px; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; font-size: 0.8em; padding: 4px; text-align: center; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+.boite.centre { background: #c8e6c9; border-width: 3px; }
+  </style>
 </head>
 <body>
-  <h1>Mon arbre généalogique</h1>
 
-  <input id="prenom" placeholder="Prénom">
-  <input id="nom" placeholder="Nom">
-  <input id="naissance" placeholder="Année de naissance">
-  <select id="pere"></select>
-  <select id="mere"></select>
-  <button onclick="ajouter()">Ajouter</button>
-  <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
-  <button onclick="exporter()">Exporter</button>
-<button onclick="document.getElementById('fichier').click()">Importer</button>
-<input type="file" id="fichier" accept=".json" onchange="importer(event)" style="display:none">
+  <div id="page-accueil">
+    <h1>Mon arbre généalogique</h1>
+    <div class="menu">
+      <button onclick="aller('ajouter')">Ajouter</button>
+      <button onclick="aller('rechercher')">Rechercher</button>
+      <button onclick="aller('arbre')">Arbre</button>
+    </div>
+    <p>
+      <button onclick="exporter()">Exporter</button>
+      <button onclick="document.getElementById('fichier').click()">Importer</button>
+      <input type="file" id="fichier" accept=".json" onchange="importer(event)" style="display:none">
+    </p>
+  </div>
 
-  <ul id="liste"></ul>
+  <div id="page-ajouter" style="display:none">
+    <button onclick="aller('accueil')">← Accueil</button>
+    <h2>Ajouter une personne</h2>
+    <input id="prenom" placeholder="Prénom">
+    <input id="nom" placeholder="Nom" list="noms-connus" oninput="suggerer(this)">
+<input id="jeunefille" placeholder="Nom de jeune fille" list="noms-connus" oninput="suggerer(this)">
+<datalist id="noms-connus"></datalist>
+    <input id="naissance" placeholder="Année de naissance">
+    <select id="pere"></select>
+    <select id="mere"></select>
+    <button onclick="ajouter()">Ajouter</button>
+    <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
+    <h2>Personnes enregistrées</h2>
+    <ul id="liste"></ul>
+  </div>
+
+  <div id="page-rechercher" style="display:none">
+  <button onclick="aller('accueil')">← Accueil</button>
+  <h2>Rechercher</h2>
+  <input id="recherche" placeholder="Nom ou prénom" oninput="rechercher()">
+  <div id="resultats"></div>
+  <div id="fiche"></div>
+</div>
+
+  <div id="page-arbre" style="display:none">
+  <button onclick="aller('accueil')">← Accueil</button>
+  <button onclick="retourArbre()">↩ Retour</button>
   <h2>Arbre</h2>
-  <div id="arbre"></div>
-  
+  <p>Touche une personne pour te recentrer sur elle. Fais glisser pour te déplacer.</p>
+  <div id="arbre-zone"></div>
+</div>
+
   <script>
     let personnes = JSON.parse(localStorage.getItem("personnes")) || [];
     let derniereSuppression = null;
     let enEdition = null;
 
-    personnes.forEach((p, i) => {
-      if (!p.id) p.id = Date.now() + i;
-    });
+    const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
+
+    function aller(nom) {
+      for (const p of PAGES) {
+        document.getElementById("page-" + p).style.display = (p === nom) ? "block" : "none";
+      }
+      if (nom === "arbre") afficherArbre();
+      window.scrollTo(0, 0);
+    }
+
+    function preparer() {
+      personnes.forEach((p, i) => {
+        if (!p.id) p.id = Date.now() + i;
+      });
+    }
+    preparer();
 
     function sauvegarder() {
       localStorage.setItem("personnes", JSON.stringify(personnes));
@@ -41,6 +93,13 @@
     function nomDe(id) {
       const p = personnes.find(x => String(x.id) === String(id));
       return p ? p.prenom + " " + p.nom : "";
+    }
+
+    function libelle(p) {
+      let texte = p.prenom + " " + p.nom;
+      if (p.nomJeuneFille) texte += " (née " + p.nomJeuneFille + ")";
+      if (p.naissance) texte += " – " + p.naissance;
+      return texte;
     }
 
     function remplirChoix() {
@@ -54,7 +113,7 @@
         for (const p of personnes) {
           const option = document.createElement("option");
           option.value = p.id;
-          option.textContent = p.prenom + " " + p.nom;
+          option.textContent = libelle(p);
           select.appendChild(option);
         }
       }
@@ -67,6 +126,7 @@
         id: Date.now(),
         prenom: prenom,
         nom: document.getElementById("nom").value,
+        nomJeuneFille: document.getElementById("jeunefille").value,
         naissance: document.getElementById("naissance").value,
         pereId: document.getElementById("pere").value,
         mereId: document.getElementById("mere").value
@@ -75,193 +135,439 @@
       sauvegarder();
       document.getElementById("prenom").value = "";
       document.getElementById("nom").value = "";
+      document.getElementById("jeunefille").value = "";
       document.getElementById("naissance").value = "";
       afficher();
     }
 
     function supprimer(personne) {
-  derniereSuppression = {
-    personne: personne,
-    position: personnes.indexOf(personne)
-  };
-  personnes = personnes.filter(x => x !== personne);
-  sauvegarder();
-  afficher();
-
+      derniereSuppression = {
+        personne: personne,
+        position: personnes.indexOf(personne)
+      };
+      personnes = personnes.filter(x => x !== personne);
+      sauvegarder();
+      afficher();
     }
 
     function annuler() {
-  if (!derniereSuppression) return;
-  personnes.splice(derniereSuppression.position, 0, derniereSuppression.personne);
-  derniereSuppression = null;
-  sauvegarder();
-  afficher();
+      if (!derniereSuppression) return;
+      personnes.splice(derniereSuppression.position, 0, derniereSuppression.personne);
+      derniereSuppression = null;
+      sauvegarder();
+      afficher();
+    }
+
+    function exporter() {
+      const texte = JSON.stringify(personnes, null, 2);
+      const blob = new Blob([texte], { type: "application/json" });
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(blob);
+      lien.download = "arbre.json";
+      lien.click();
+    }
+
+    function importer(event) {
+      const fichier = event.target.files[0];
+      if (!fichier) return;
+      const lecteur = new FileReader();
+      lecteur.onload = () => {
+        try {
+          const donnees = JSON.parse(lecteur.result);
+          if (!Array.isArray(donnees)) throw new Error("format");
+          if (!confirm("Remplacer l'arbre actuel par ce fichier ?")) return;
+          personnes = donnees;
+          preparer();
+          derniereSuppression = null;
+          enEdition = null;
+          sauvegarder();
+          afficher();
+        } catch (e) {
+          alert("Fichier invalide.");
+        }
+      };
+      lecteur.readAsText(fichier);
+      event.target.value = "";
     }
 
     function enfantsDe(parent) {
-  return personnes.filter(p =>
-    String(p.pereId) === String(parent.id) ||
-    String(p.mereId) === String(parent.id)
-  );
+      return personnes.filter(p =>
+        String(p.pereId) === String(parent.id) ||
+        String(p.mereId) === String(parent.id)
+      );
     }
-    
+
+    function descendants(personne) {
+      let resultat = [];
+      for (const enfant of enfantsDe(personne)) {
+        resultat.push(enfant);
+        resultat = resultat.concat(descendants(enfant));
+      }
+      return resultat;
+    }
+
     function construireBranche(personne) {
-  const li = document.createElement("li");
-  li.textContent = personne.prenom + " " + personne.nom + " (" + personne.naissance + ")";
-  const enfants = enfantsDe(personne);
-  if (enfants.length > 0) {
-    const ul = document.createElement("ul");
-    for (const enfant of enfants) {
-      ul.appendChild(construireBranche(enfant));
+      const li = document.createElement("li");
+      li.textContent = libelle(personne);
+      const enfants = enfantsDe(personne);
+      if (enfants.length > 0) {
+        const ul = document.createElement("ul");
+        for (const enfant of enfants) {
+          ul.appendChild(construireBranche(enfant));
+        }
+        li.appendChild(ul);
+      }
+      return li;
     }
-    li.appendChild(ul);
+
+    const GENERATIONS = 3;
+const LARGEUR_BOITE = 120;
+const HAUTEUR_BOITE = 56;
+const ESPACE = 16;
+const HAUTEUR_LIGNE = 120;
+
+let personneCentrale = null;
+let historiqueArbre = [];
+
+function trouver(id) {
+  return personnes.find(x => String(x.id) === String(id));
+}
+
+function centrer(personne) {
+  if (personneCentrale && personneCentrale !== personne) {
+    historiqueArbre.push(personneCentrale);
   }
-  return li;
+  personneCentrale = personne;
+  afficherArbre();
+}
+
+function retourArbre() {
+  while (historiqueArbre.length > 0) {
+    const precedente = historiqueArbre.pop();
+    if (personnes.includes(precedente)) {
+      personneCentrale = precedente;
+      break;
+    }
+  }
+  afficherArbre();
+}
+
+function voirDansArbre(personne) {
+  centrer(personne);
+  aller("arbre");
 }
 
 function afficherArbre() {
-  const arbre = document.getElementById("arbre");
-  arbre.innerHTML = "";
-  const ul = document.createElement("ul");
-  for (const p of personnes) {
-    if (!nomDe(p.pereId) && !nomDe(p.mereId)) {
-      ul.appendChild(construireBranche(p));
+  const zone = document.getElementById("arbre-zone");
+  zone.innerHTML = "";
+  if (personnes.length === 0) {
+    zone.textContent = "Aucune personne enregistrée.";
+    return;
+  }
+  if (!personneCentrale || !personnes.includes(personneCentrale)) {
+    personneCentrale = personnes[0];
+  }
+
+  const centre = personneCentrale;
+  const enfants = enfantsDe(centre);
+  const pas = LARGEUR_BOITE + ESPACE;
+  const largeur = Math.max(Math.pow(2, GENERATIONS), enfants.length) * pas;
+  const hauteur = (GENERATIONS + 2) * HAUTEUR_LIGNE;
+  const yCentre = 20 + GENERATIONS * HAUTEUR_LIGNE;
+
+  const plan = document.createElement("div");
+  plan.style.position = "relative";
+  plan.style.width = largeur + "px";
+  plan.style.height = hauteur + "px";
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("width", largeur);
+  svg.setAttribute("height", hauteur);
+  svg.style.position = "absolute";
+  svg.style.left = "0";
+  svg.style.top = "0";
+  plan.appendChild(svg);
+
+  function tracer(x1, y1, x2, y2) {
+    const milieu = (y1 + y2) / 2;
+    const ligne = document.createElementNS(svgNS, "polyline");
+    ligne.setAttribute("points",
+      x1 + "," + y1 + " " + x1 + "," + milieu + " " +
+      x2 + "," + milieu + " " + x2 + "," + y2);
+    ligne.setAttribute("fill", "none");
+    ligne.setAttribute("stroke", "#2e7d32");
+    ligne.setAttribute("stroke-width", "2");
+    svg.appendChild(ligne);
+  }
+
+  function boite(personne, x, y) {
+    const div = document.createElement("div");
+    div.className = personne === centre ? "boite centre" : "boite";
+    div.style.left = (x - LARGEUR_BOITE / 2) + "px";
+    div.style.top = y + "px";
+
+    const nom = document.createElement("strong");
+    nom.textContent = personne.prenom + " " + personne.nom;
+    div.appendChild(nom);
+
+    const details = [];
+    if (personne.nomJeuneFille) details.push("née " + personne.nomJeuneFille);
+    if (personne.naissance) details.push(personne.naissance);
+    if (details.length > 0) {
+      const petit = document.createElement("span");
+      petit.textContent = details.join(" – ");
+      div.appendChild(petit);
+    }
+
+    div.onclick = () => centrer(personne);
+    plan.appendChild(div);
+  }
+
+  function placerAncetres(personne, g, i) {
+    const x = (i + 0.5) * largeur / Math.pow(2, g);
+    const y = 20 + (GENERATIONS - g) * HAUTEUR_LIGNE;
+    boite(personne, x, y);
+    if (g >= GENERATIONS) return;
+
+    const parents = [[personne.pereId, 2 * i], [personne.mereId, 2 * i + 1]];
+    for (const [id, position] of parents) {
+      const parent = trouver(id);
+      if (!parent) continue;
+      const xp = (position + 0.5) * largeur / Math.pow(2, g + 1);
+      const yp = 20 + (GENERATIONS - (g + 1)) * HAUTEUR_LIGNE;
+      tracer(x, y, xp, yp + HAUTEUR_BOITE);
+      placerAncetres(parent, g + 1, position);
     }
   }
-  arbre.appendChild(ul);
+
+  placerAncetres(centre, 0, 0);
+
+  const xCentre = largeur / 2;
+  const yEnfants = 20 + (GENERATIONS + 1) * HAUTEUR_LIGNE;
+  enfants.forEach((enfant, k) => {
+    const x = xCentre + (k - (enfants.length - 1) / 2) * pas;
+    tracer(xCentre, yCentre + HAUTEUR_BOITE, x, yEnfants);
+    boite(enfant, x, yEnfants);
+  });
+
+  zone.appendChild(plan);
+  zone.scrollLeft = xCentre - zone.clientWidth / 2;
+  zone.scrollTop = yCentre - zone.clientHeight / 2 + HAUTEUR_BOITE / 2;
 }
 
-    function descendants(personne) {
-  let resultat = [];
-  for (const enfant of enfantsDe(personne)) {
-    resultat.push(enfant);
-    resultat = resultat.concat(descendants(enfant));
-  }
-  return resultat;
-}
+    function creerMenu(personne, champ, titre) {
+      const select = document.createElement("select");
+      const vide = document.createElement("option");
+      vide.value = "";
+      vide.textContent = titre;
+      select.appendChild(vide);
 
-function creerMenu(personne, champ, titre) {
-  const select = document.createElement("select");
-  const vide = document.createElement("option");
-  vide.value = "";
-  vide.textContent = titre;
-  select.appendChild(vide);
+      const interdits = descendants(personne);
+      for (const autre of personnes) {
+        if (autre === personne || interdits.includes(autre)) continue;
+        const option = document.createElement("option");
+        option.value = autre.id;
+        option.textContent = libelle(autre);
+        select.appendChild(option);
+      }
 
-  const interdits = descendants(personne);
-  for (const autre of personnes) {
-    if (autre === personne || interdits.includes(autre)) continue;
-    const option = document.createElement("option");
-    option.value = autre.id;
-    option.textContent = autre.prenom + " " + autre.nom;
-    select.appendChild(option);
-  }
-
-  select.value = nomDe(personne[champ]) ? personne[champ] : "";
-  select.onchange = () => {
-    personne[champ] = select.value;
-    sauvegarder();
-    afficher();
-  };
-  return select;
-}
-    function creerChamp(valeur, placeholder) {
-  const input = document.createElement("input");
-  input.value = valeur || "";
-  input.placeholder = placeholder;
-  return input;
-}
-    function exporter() {
-  const texte = JSON.stringify(personnes, null, 2);
-  const blob = new Blob([texte], { type: "application/json" });
-  const lien = document.createElement("a");
-  lien.href = URL.createObjectURL(blob);
-  lien.download = "arbre.json";
-  lien.click();
-}
-
-function importer(event) {
-  const fichier = event.target.files[0];
-  if (!fichier) return;
-  const lecteur = new FileReader();
-  lecteur.onload = () => {
-    try {
-      const donnees = JSON.parse(lecteur.result);
-      if (!Array.isArray(donnees)) throw new Error("format");
-      if (!confirm("Remplacer l'arbre actuel par ce fichier ?")) return;
-      personnes = donnees;
-      derniereSuppression = null;
-      enEdition = null;
-      sauvegarder();
-      afficher();
-    } catch (e) {
-      alert("Fichier invalide.");
-    }
-  };
-  lecteur.readAsText(fichier);
-  event.target.value = "";
-}
-    
-    function afficher() {
-  const liste = document.getElementById("liste");
-  liste.innerHTML = "";
-  for (const p of personnes) {
-    const li = document.createElement("li");
-
-    if (p === enEdition) {
-      const prenom = creerChamp(p.prenom, "Prénom");
-      const nom = creerChamp(p.nom, "Nom");
-      const naissance = creerChamp(p.naissance, "Année de naissance");
-
-      const ok = document.createElement("button");
-      ok.textContent = "Enregistrer";
-      ok.onclick = () => {
-        if (prenom.value === "") return;
-        p.prenom = prenom.value;
-        p.nom = nom.value;
-        p.naissance = naissance.value;
-        enEdition = null;
+      select.value = nomDe(personne[champ]) ? personne[champ] : "";
+      select.onchange = () => {
+        personne[champ] = select.value;
         sauvegarder();
         afficher();
       };
-
-      const non = document.createElement("button");
-      non.textContent = "Annuler";
-      non.onclick = () => {
-        enEdition = null;
-        afficher();
-      };
-
-      li.append(prenom, nom, naissance, ok, non);
-    } else {
-      li.textContent = p.prenom + " " + p.nom + " (" + p.naissance + ") ";
-      li.appendChild(creerMenu(p, "pereId", "Père : aucun"));
-      li.appendChild(creerMenu(p, "mereId", "Mère : aucune"));
-
-      const modifier = document.createElement("button");
-      modifier.textContent = "Modifier";
-      modifier.onclick = () => {
-        enEdition = p;
-        afficher();
-      };
-      li.appendChild(modifier);
-
-      const bouton = document.createElement("button");
-      bouton.textContent = "Supprimer";
-      bouton.onclick = () => supprimer(p);
-      li.appendChild(bouton);
+      return select;
     }
 
-    liste.appendChild(li);
-  }
-  afficherArbre();
-  document.getElementById("annuler").style.display = derniereSuppression ? "inline" : "none";
-  remplirChoix();
+    function creerChamp(valeur, placeholder) {
+      const input = document.createElement("input");
+      input.value = valeur || "";
+      input.placeholder = placeholder;
+      return input;
+    }
+
+    function normaliser(texte) {
+  return (texte || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-    afficher();
-    if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+function creerLien(personne) {
+  const bouton = document.createElement("button");
+  bouton.textContent = libelle(personne);
+  bouton.onclick = () => afficherFiche(personne);
+  return bouton;
 }
+
+function rechercher() {
+  const saisie = normaliser(document.getElementById("recherche").value.trim());
+  const zone = document.getElementById("resultats");
+  zone.innerHTML = "";
+  document.getElementById("fiche").innerHTML = "";
+  if (saisie === "") return;
+
+  const mots = saisie.split(" ");
+  const trouves = personnes.filter(p => {
+    const texte = normaliser(p.prenom + " " + p.nom + " " + (p.nomJeuneFille || ""));
+    return mots.every(mot => texte.includes(mot));
+  });
+
+  if (trouves.length === 0) {
+    zone.textContent = "Aucun résultat.";
+    return;
+  }
+  for (const p of trouves) {
+    const div = document.createElement("div");
+    div.appendChild(creerLien(p));
+    zone.appendChild(div);
+  }
+}
+
+function ajouterParent(fiche, etiquette, id) {
+  const ligne = document.createElement("p");
+  ligne.textContent = etiquette + " : ";
+  const parent = personnes.find(x => String(x.id) === String(id));
+  if (parent) {
+    ligne.appendChild(creerLien(parent));
+  } else {
+    ligne.append("non renseigné");
+  }
+  fiche.appendChild(ligne);
+}
+
+function afficherFiche(personne) {
+  document.getElementById("resultats").innerHTML = "";
+  const fiche = document.getElementById("fiche");
+  fiche.innerHTML = "";
+
+  const titre = document.createElement("h3");
+  titre.textContent = personne.prenom + " " + personne.nom;
+  fiche.appendChild(titre);
+
+  if (personne.nomJeuneFille) {
+    const p = document.createElement("p");
+    p.textContent = "Nom de jeune fille : " + personne.nomJeuneFille;
+    fiche.appendChild(p);
+  }
+  if (personne.naissance) {
+    const p = document.createElement("p");
+    p.textContent = "Année de naissance : " + personne.naissance;
+    fiche.appendChild(p);
+  }
+
+  ajouterParent(fiche, "Père", personne.pereId);
+  ajouterParent(fiche, "Mère", personne.mereId);
+
+  const enfants = enfantsDe(personne);
+  const titreEnfants = document.createElement("p");
+  titreEnfants.textContent = enfants.length === 0 ? "Enfants : aucun enregistré" : "Enfants :";
+  fiche.appendChild(titreEnfants);
+
+  if (enfants.length > 0) {
+    const ul = document.createElement("ul");
+    for (const enfant of enfants) {
+      const li = document.createElement("li");
+      li.appendChild(creerLien(enfant));
+      ul.appendChild(li);
+    }
+    fiche.appendChild(ul);
+  }
+  const voir = document.createElement("button");
+voir.textContent = "Voir dans l'arbre";
+voir.onclick = () => voirDansArbre(personne);
+fiche.appendChild(voir);
+}
+    
+    function suggerer(champ) {
+  const saisie = normaliser(champ.value.trim());
+  const liste = document.getElementById("noms-connus");
+  liste.innerHTML = "";
+  if (saisie === "") return;
+
+  const noms = [];
+  for (const p of personnes) {
+    for (const nom of [p.nom, p.nomJeuneFille]) {
+      if (nom && normaliser(nom).startsWith(saisie) && !noms.includes(nom)) {
+        noms.push(nom);
+      }
+    }
+  }
+  noms.sort();
+
+  for (const nom of noms) {
+    const option = document.createElement("option");
+    option.value = nom;
+    liste.appendChild(option);
+  }
+}
+    function afficher() {
+      const liste = document.getElementById("liste");
+      liste.innerHTML = "";
+      for (const p of personnes) {
+        const li = document.createElement("li");
+
+        if (p === enEdition) {
+          const prenom = creerChamp(p.prenom, "Prénom");
+          const nom = creerChamp(p.nom, "Nom");
+          const jeunefille = creerChamp(p.nomJeuneFille, "Nom de jeune fille");
+          const naissance = creerChamp(p.naissance, "Année de naissance");
+          nom.setAttribute("list", "noms-connus");
+nom.oninput = () => suggerer(nom);
+jeunefille.setAttribute("list", "noms-connus");
+jeunefille.oninput = () => suggerer(jeunefille);
+
+          const ok = document.createElement("button");
+          ok.textContent = "Enregistrer";
+          ok.onclick = () => {
+            if (prenom.value === "") return;
+            p.prenom = prenom.value;
+            p.nom = nom.value;
+            p.nomJeuneFille = jeunefille.value;
+            p.naissance = naissance.value;
+            enEdition = null;
+            sauvegarder();
+            afficher();
+          };
+
+          const non = document.createElement("button");
+          non.textContent = "Annuler";
+          non.onclick = () => {
+            enEdition = null;
+            afficher();
+          };
+
+          li.append(prenom, nom, jeunefille, naissance, ok, non);
+        } else {
+          li.textContent = libelle(p) + " ";
+          li.appendChild(creerMenu(p, "pereId", "Père : aucun"));
+          li.appendChild(creerMenu(p, "mereId", "Mère : aucune"));
+
+          const modifier = document.createElement("button");
+          modifier.textContent = "Modifier";
+          modifier.onclick = () => {
+            enEdition = p;
+            afficher();
+          };
+          li.appendChild(modifier);
+
+          const bouton = document.createElement("button");
+          bouton.textContent = "Supprimer";
+          bouton.onclick = () => supprimer(p);
+          li.appendChild(bouton);
+        }
+
+        liste.appendChild(li);
+      }
+      afficherArbre();
+      document.getElementById("annuler").style.display = derniereSuppression ? "inline" : "none";
+      remplirChoix();
+    }
+
+    afficher();
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js");
+    }
   </script>
 </body>
 </html>
