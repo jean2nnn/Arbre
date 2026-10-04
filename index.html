@@ -11,9 +11,15 @@
     .menu button { display: block; width: 100%; padding: 22px; margin: 14px 0; font-size: 1.3em; }
     input, select, button { font-size: 1em; margin: 3px; }
     li { margin: 10px 0; }
-    #arbre-zone { overflow: auto; height: 70vh; border: 1px solid #aaa; background: #f6f8f4; }
-.boite { position: absolute; width: 120px; height: 56px; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; font-size: 0.8em; padding: 4px; text-align: center; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
-.boite.centre { background: #c8e6c9; border-width: 3px; }
+    .formulaire input, .formulaire select { display: block; width: 100%; box-sizing: border-box; padding: 8px; margin: 6px 0; }
+    .formulaire button { padding: 10px 16px; }
+    .suggestions button { display: block; width: 100%; text-align: left; padding: 10px; margin: 0; background: #e8f5e9; border: 1px solid #a5d6a7; }
+    .choix { margin: 4px 0; }
+    .choix span { display: inline-block; width: 110px; }
+    .choix input { display: inline-block; width: calc(100% - 120px); box-sizing: border-box; padding: 6px; margin: 3px 0; }
+    #arbre-zone { overflow: auto; height: 60vh; border: 1px solid #aaa; background: #f6f8f4; touch-action: pan-x pan-y; }
+    .boite { position: absolute; width: 120px; height: 56px; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; font-size: 0.8em; padding: 4px; text-align: center; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+    .boite.centre { background: #c8e6c9; border-width: 3px; }
   </style>
 </head>
 <body>
@@ -35,41 +41,68 @@
   <div id="page-ajouter" style="display:none">
     <button onclick="aller('accueil')">← Accueil</button>
     <h2>Ajouter une personne</h2>
-    <input id="prenom" placeholder="Prénom">
-    <input id="nom" placeholder="Nom" list="noms-connus" oninput="suggerer(this)">
-<input id="jeunefille" placeholder="Nom de jeune fille" list="noms-connus" oninput="suggerer(this)">
-<datalist id="noms-connus"></datalist>
-    <input id="naissance" placeholder="Année de naissance">
-    <select id="pere"></select>
-    <select id="mere"></select>
-    <button onclick="ajouter()">Ajouter</button>
-    <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
-    <h2>Personnes enregistrées</h2>
-    <ul id="liste"></ul>
+    <div class="formulaire">
+      <input id="prenom" placeholder="Prénom" autocomplete="off">
+      <input id="nom" placeholder="Nom" autocomplete="off" oninput="suggerer(this)" onblur="setTimeout(cacherSuggestions, 200)">
+      <div id="suggestions" class="suggestions"></div>
+      <input id="jeunefille" placeholder="Nom de jeune fille" autocomplete="off">
+      <input id="naissance" placeholder="Année de naissance" autocomplete="off">
+      <input id="deces" placeholder="Année de décès (si décédé)" autocomplete="off">
+      <div id="choix-pere"></div>
+      <div id="choix-mere"></div>
+      <div id="choix-conjoint"></div>
+      <button onclick="ajouter()">Ajouter</button>
+      <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
+    </div>
+    <p id="message"></p>
+    <p>Pour modifier ou supprimer une personne, utilise <strong>Rechercher</strong>.</p>
   </div>
 
   <div id="page-rechercher" style="display:none">
-  <button onclick="aller('accueil')">← Accueil</button>
-  <h2>Rechercher</h2>
-  <input id="recherche" placeholder="Nom ou prénom" oninput="rechercher()">
-  <div id="resultats"></div>
-  <div id="fiche"></div>
-</div>
+    <button onclick="aller('accueil')">← Accueil</button>
+    <button id="annuler-recherche" onclick="annuler()" style="display:none">Annuler la suppression</button>
+    <h2>Rechercher</h2>
+    <input id="recherche" placeholder="Nom ou prénom" oninput="rechercher()">
+    <div id="resultats"></div>
+    <div id="fiche"></div>
+  </div>
 
   <div id="page-arbre" style="display:none">
-  <button onclick="aller('accueil')">← Accueil</button>
-  <button onclick="retourArbre()">↩ Retour</button>
-  <h2>Arbre</h2>
-  <p>Touche une personne pour te recentrer sur elle. Fais glisser pour te déplacer.</p>
-  <div id="arbre-zone"></div>
-</div>
+    <button onclick="aller('accueil')">← Accueil</button>
+    <button onclick="retourArbre()">↩ Retour</button>
+    <h2>Arbre</h2>
+    <div id="choix-aller"></div>
+    <p>
+      <button onclick="changerZoom(0.8)">－</button>
+      <button onclick="changerZoom(1.25)">＋</button>
+      <button onclick="ajusterZoom()">Ajuster</button>
+    </p>
+    <p>Touche une personne pour te centrer sur elle. Fais glisser pour te déplacer, pince avec deux doigts pour zoomer.</p>
+    <div id="arbre-zone"></div>
+  </div>
 
   <script>
     let personnes = JSON.parse(localStorage.getItem("personnes")) || [];
     let derniereSuppression = null;
-    let enEdition = null;
+    let choixAjout = { pere: "", mere: "", conjoint: "" };
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
+
+    const LARGEUR_BOITE = 120;
+    const HAUTEUR_BOITE = 56;
+    const ESPACE = 16;
+    const ECART_COUPLE = 40;
+    const HAUTEUR_LIGNE = 120;
+
+    let zoom = 1;
+    let personneCentrale = null;
+    let historiqueArbre = [];
+    let enveloppeArbre = null;
+    let planArbre = null;
+    let largeurArbre = 0;
+    let hauteurArbre = 0;
+    let boitesArbre = new Map();
+    let positionsArbre = new Map();
 
     function aller(nom) {
       for (const p of PAGES) {
@@ -90,32 +123,118 @@
       localStorage.setItem("personnes", JSON.stringify(personnes));
     }
 
-    function nomDe(id) {
-      const p = personnes.find(x => String(x.id) === String(id));
-      return p ? p.prenom + " " + p.nom : "";
+    function trouver(id) {
+      return personnes.find(x => String(x.id) === String(id));
+    }
+
+    function conjointDe(p) {
+      const c = trouver(p.conjointId);
+      return (c && String(c.conjointId) === String(p.id)) ? c : null;
+    }
+
+    function dates(p) {
+      if (p.deces) return (p.naissance || "?") + "–" + p.deces;
+      return p.naissance || "";
     }
 
     function libelle(p) {
       let texte = p.prenom + " " + p.nom;
       if (p.nomJeuneFille) texte += " (née " + p.nomJeuneFille + ")";
-      if (p.naissance) texte += " – " + p.naissance;
+      const d = dates(p);
+      if (d) texte += ", " + d;
       return texte;
     }
 
-    function remplirChoix() {
-      for (const id of ["pere", "mere"]) {
-        const select = document.getElementById(id);
-        select.innerHTML = "";
-        const vide = document.createElement("option");
-        vide.value = "";
-        vide.textContent = id === "pere" ? "Père : aucun" : "Mère : aucune";
-        select.appendChild(vide);
-        for (const p of personnes) {
-          const option = document.createElement("option");
-          option.value = p.id;
-          option.textContent = libelle(p);
-          select.appendChild(option);
+    function normaliser(texte) {
+      return (texte || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function creerChoix(etiquette, valeurId, exclus, quandChoisi) {
+      let choisiId = valeurId;
+
+      const conteneur = document.createElement("div");
+      conteneur.className = "choix";
+
+      const nomChamp = document.createElement("span");
+      nomChamp.textContent = etiquette;
+
+      const champ = document.createElement("input");
+      champ.placeholder = "taper un nom";
+      champ.autocomplete = "off";
+      const actuel = trouver(choisiId);
+      champ.value = actuel ? libelle(actuel) : "";
+
+      const zone = document.createElement("div");
+      zone.className = "suggestions";
+
+      champ.onfocus = () => champ.select();
+
+      champ.oninput = () => {
+        zone.innerHTML = "";
+        const saisie = normaliser(champ.value.trim());
+        if (saisie === "") {
+          if (choisiId !== "") {
+            choisiId = "";
+            quandChoisi(null);
+          }
+          return;
         }
+        const mots = saisie.split(" ");
+        const trouves = personnes
+          .filter(p => !exclus.includes(p))
+          .filter(p => {
+            const texte = normaliser(p.prenom + " " + p.nom + " " + (p.nomJeuneFille || ""));
+            return mots.every(mot => texte.includes(mot));
+          })
+          .slice(0, 6);
+        for (const p of trouves) {
+          const bouton = document.createElement("button");
+          bouton.textContent = libelle(p);
+          bouton.onclick = () => {
+            choisiId = p.id;
+            champ.value = libelle(p);
+            zone.innerHTML = "";
+            quandChoisi(p);
+          };
+          zone.appendChild(bouton);
+        }
+      };
+
+      champ.onblur = () => setTimeout(() => {
+        zone.innerHTML = "";
+        const p = trouver(choisiId);
+        champ.value = p ? libelle(p) : "";
+      }, 200);
+
+      conteneur.append(nomChamp, champ, zone);
+      return conteneur;
+    }
+
+    function creerChampEtiquete(etiquette, valeur) {
+      const conteneur = document.createElement("div");
+      conteneur.className = "choix";
+      const nom = document.createElement("span");
+      nom.textContent = etiquette;
+      const input = document.createElement("input");
+      input.value = valeur || "";
+      input.autocomplete = "off";
+      conteneur.append(nom, input);
+      return { conteneur: conteneur, input: input };
+    }
+
+    function remplirChoix() {
+      const modeles = [
+        ["pere", "Père"],
+        ["mere", "Mère"],
+        ["conjoint", "Conjoint"]
+      ];
+      for (const [cle, etiquette] of modeles) {
+        if (!trouver(choixAjout[cle])) choixAjout[cle] = "";
+        const zone = document.getElementById("choix-" + cle);
+        zone.innerHTML = "";
+        zone.appendChild(creerChoix(etiquette, choixAjout[cle], [], p => {
+          choixAjout[cle] = p ? p.id : "";
+        }));
       }
     }
 
@@ -128,15 +247,23 @@
         nom: document.getElementById("nom").value,
         nomJeuneFille: document.getElementById("jeunefille").value,
         naissance: document.getElementById("naissance").value,
-        pereId: document.getElementById("pere").value,
-        mereId: document.getElementById("mere").value
+        deces: document.getElementById("deces").value,
+        pereId: choixAjout.pere,
+        mereId: choixAjout.mere,
+        conjointId: ""
       };
       personnes.push(personne);
+      if (choixAjout.conjoint) definirConjoint(personne, choixAjout.conjoint);
       sauvegarder();
+      document.getElementById("message").textContent =
+        "✔ " + personne.prenom + " " + personne.nom + " ajouté(e).";
       document.getElementById("prenom").value = "";
       document.getElementById("nom").value = "";
       document.getElementById("jeunefille").value = "";
       document.getElementById("naissance").value = "";
+      document.getElementById("deces").value = "";
+      choixAjout = { pere: "", mere: "", conjoint: "" };
+      cacherSuggestions();
       afficher();
     }
 
@@ -156,6 +283,7 @@
       derniereSuppression = null;
       sauvegarder();
       afficher();
+      rechercher();
     }
 
     function exporter() {
@@ -179,9 +307,9 @@
           personnes = donnees;
           preparer();
           derniereSuppression = null;
-          enEdition = null;
           sauvegarder();
           afficher();
+          rechercher();
         } catch (e) {
           alert("Fichier invalide.");
         }
@@ -206,362 +334,611 @@
       return resultat;
     }
 
-    function construireBranche(personne) {
-      const li = document.createElement("li");
-      li.textContent = libelle(personne);
+    function creerLien(personne) {
+      const bouton = document.createElement("button");
+      bouton.textContent = libelle(personne);
+      bouton.onclick = () => afficherFiche(personne);
+      return bouton;
+    }
+
+    function rechercher() {
+      const saisie = normaliser(document.getElementById("recherche").value.trim());
+      const zone = document.getElementById("resultats");
+      zone.innerHTML = "";
+      document.getElementById("fiche").innerHTML = "";
+      if (saisie === "") return;
+
+      const mots = saisie.split(" ");
+      const trouves = personnes.filter(p => {
+        const texte = normaliser(p.prenom + " " + p.nom + " " + (p.nomJeuneFille || ""));
+        return mots.every(mot => texte.includes(mot));
+      });
+
+      if (trouves.length === 0) {
+        zone.textContent = "Aucun résultat.";
+        return;
+      }
+      for (const p of trouves) {
+        const div = document.createElement("div");
+        div.appendChild(creerLien(p));
+        zone.appendChild(div);
+      }
+    }
+
+    function ajouterParent(fiche, etiquette, id) {
+      const ligne = document.createElement("p");
+      ligne.textContent = etiquette + " : ";
+      const parent = trouver(id);
+      if (parent) {
+        ligne.appendChild(creerLien(parent));
+      } else {
+        ligne.append("non renseigné");
+      }
+      fiche.appendChild(ligne);
+    }
+
+    function afficherFiche(personne) {
+      document.getElementById("resultats").innerHTML = "";
+      const fiche = document.getElementById("fiche");
+      fiche.innerHTML = "";
+
+      const titre = document.createElement("h3");
+      titre.textContent = personne.prenom + " " + personne.nom;
+      fiche.appendChild(titre);
+
+      if (personne.nomJeuneFille) {
+        const p = document.createElement("p");
+        p.textContent = "Nom de jeune fille : " + personne.nomJeuneFille;
+        fiche.appendChild(p);
+      }
+      if (personne.naissance) {
+        const p = document.createElement("p");
+        p.textContent = "Année de naissance : " + personne.naissance;
+        fiche.appendChild(p);
+      }
+      if (personne.deces) {
+        const p = document.createElement("p");
+        p.textContent = "Année de décès : " + personne.deces;
+        fiche.appendChild(p);
+      }
+
+      ajouterParent(fiche, "Père", personne.pereId);
+      ajouterParent(fiche, "Mère", personne.mereId);
+      const conjoint = conjointDe(personne);
+      ajouterParent(fiche, "Conjoint", conjoint ? conjoint.id : "");
+
       const enfants = enfantsDe(personne);
+      const titreEnfants = document.createElement("p");
+      titreEnfants.textContent = enfants.length === 0 ? "Enfants : aucun enregistré" : "Enfants :";
+      fiche.appendChild(titreEnfants);
+
       if (enfants.length > 0) {
         const ul = document.createElement("ul");
         for (const enfant of enfants) {
-          ul.appendChild(construireBranche(enfant));
+          const li = document.createElement("li");
+          li.appendChild(creerLien(enfant));
+          ul.appendChild(li);
         }
-        li.appendChild(ul);
-      }
-      return li;
-    }
-
-    const GENERATIONS = 3;
-const LARGEUR_BOITE = 120;
-const HAUTEUR_BOITE = 56;
-const ESPACE = 16;
-const HAUTEUR_LIGNE = 120;
-
-let personneCentrale = null;
-let historiqueArbre = [];
-
-function trouver(id) {
-  return personnes.find(x => String(x.id) === String(id));
-}
-
-function centrer(personne) {
-  if (personneCentrale && personneCentrale !== personne) {
-    historiqueArbre.push(personneCentrale);
-  }
-  personneCentrale = personne;
-  afficherArbre();
-}
-
-function retourArbre() {
-  while (historiqueArbre.length > 0) {
-    const precedente = historiqueArbre.pop();
-    if (personnes.includes(precedente)) {
-      personneCentrale = precedente;
-      break;
-    }
-  }
-  afficherArbre();
-}
-
-function voirDansArbre(personne) {
-  centrer(personne);
-  aller("arbre");
-}
-
-function afficherArbre() {
-  const zone = document.getElementById("arbre-zone");
-  zone.innerHTML = "";
-  if (personnes.length === 0) {
-    zone.textContent = "Aucune personne enregistrée.";
-    return;
-  }
-  if (!personneCentrale || !personnes.includes(personneCentrale)) {
-    personneCentrale = personnes[0];
-  }
-
-  const centre = personneCentrale;
-  const enfants = enfantsDe(centre);
-  const pas = LARGEUR_BOITE + ESPACE;
-  const largeur = Math.max(Math.pow(2, GENERATIONS), enfants.length) * pas;
-  const hauteur = (GENERATIONS + 2) * HAUTEUR_LIGNE;
-  const yCentre = 20 + GENERATIONS * HAUTEUR_LIGNE;
-
-  const plan = document.createElement("div");
-  plan.style.position = "relative";
-  plan.style.width = largeur + "px";
-  plan.style.height = hauteur + "px";
-
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("width", largeur);
-  svg.setAttribute("height", hauteur);
-  svg.style.position = "absolute";
-  svg.style.left = "0";
-  svg.style.top = "0";
-  plan.appendChild(svg);
-
-  function tracer(x1, y1, x2, y2) {
-    const milieu = (y1 + y2) / 2;
-    const ligne = document.createElementNS(svgNS, "polyline");
-    ligne.setAttribute("points",
-      x1 + "," + y1 + " " + x1 + "," + milieu + " " +
-      x2 + "," + milieu + " " + x2 + "," + y2);
-    ligne.setAttribute("fill", "none");
-    ligne.setAttribute("stroke", "#2e7d32");
-    ligne.setAttribute("stroke-width", "2");
-    svg.appendChild(ligne);
-  }
-
-  function boite(personne, x, y) {
-    const div = document.createElement("div");
-    div.className = personne === centre ? "boite centre" : "boite";
-    div.style.left = (x - LARGEUR_BOITE / 2) + "px";
-    div.style.top = y + "px";
-
-    const nom = document.createElement("strong");
-    nom.textContent = personne.prenom + " " + personne.nom;
-    div.appendChild(nom);
-
-    const details = [];
-    if (personne.nomJeuneFille) details.push("née " + personne.nomJeuneFille);
-    if (personne.naissance) details.push(personne.naissance);
-    if (details.length > 0) {
-      const petit = document.createElement("span");
-      petit.textContent = details.join(" – ");
-      div.appendChild(petit);
-    }
-
-    div.onclick = () => centrer(personne);
-    plan.appendChild(div);
-  }
-
-  function placerAncetres(personne, g, i) {
-    const x = (i + 0.5) * largeur / Math.pow(2, g);
-    const y = 20 + (GENERATIONS - g) * HAUTEUR_LIGNE;
-    boite(personne, x, y);
-    if (g >= GENERATIONS) return;
-
-    const parents = [[personne.pereId, 2 * i], [personne.mereId, 2 * i + 1]];
-    for (const [id, position] of parents) {
-      const parent = trouver(id);
-      if (!parent) continue;
-      const xp = (position + 0.5) * largeur / Math.pow(2, g + 1);
-      const yp = 20 + (GENERATIONS - (g + 1)) * HAUTEUR_LIGNE;
-      tracer(x, y, xp, yp + HAUTEUR_BOITE);
-      placerAncetres(parent, g + 1, position);
-    }
-  }
-
-  placerAncetres(centre, 0, 0);
-
-  const xCentre = largeur / 2;
-  const yEnfants = 20 + (GENERATIONS + 1) * HAUTEUR_LIGNE;
-  enfants.forEach((enfant, k) => {
-    const x = xCentre + (k - (enfants.length - 1) / 2) * pas;
-    tracer(xCentre, yCentre + HAUTEUR_BOITE, x, yEnfants);
-    boite(enfant, x, yEnfants);
-  });
-
-  zone.appendChild(plan);
-  zone.scrollLeft = xCentre - zone.clientWidth / 2;
-  zone.scrollTop = yCentre - zone.clientHeight / 2 + HAUTEUR_BOITE / 2;
-}
-
-    function creerMenu(personne, champ, titre) {
-      const select = document.createElement("select");
-      const vide = document.createElement("option");
-      vide.value = "";
-      vide.textContent = titre;
-      select.appendChild(vide);
-
-      const interdits = descendants(personne);
-      for (const autre of personnes) {
-        if (autre === personne || interdits.includes(autre)) continue;
-        const option = document.createElement("option");
-        option.value = autre.id;
-        option.textContent = libelle(autre);
-        select.appendChild(option);
+        fiche.appendChild(ul);
       }
 
-      select.value = nomDe(personne[champ]) ? personne[champ] : "";
-      select.onchange = () => {
-        personne[champ] = select.value;
+      const modifier = document.createElement("button");
+      modifier.textContent = "Modifier";
+      modifier.onclick = () => modifierFiche(personne);
+
+      const voir = document.createElement("button");
+      voir.textContent = "Voir dans l'arbre";
+      voir.onclick = () => voirDansArbre(personne);
+
+      const sup = document.createElement("button");
+      sup.textContent = "Supprimer";
+      sup.onclick = () => {
+        if (!confirm("Supprimer " + personne.prenom + " " + personne.nom + " ?")) return;
+        supprimer(personne);
+        rechercher();
+      };
+
+      const actions = document.createElement("div");
+      actions.append(modifier, voir, sup);
+      fiche.appendChild(actions);
+    }
+
+    function modifierFiche(personne) {
+      const fiche = document.getElementById("fiche");
+      fiche.innerHTML = "";
+
+      const titre = document.createElement("h3");
+      titre.textContent = "Modifier " + personne.prenom + " " + personne.nom;
+
+      const prenom = creerChampEtiquete("Prénom", personne.prenom);
+      const nom = creerChampEtiquete("Nom", personne.nom);
+      const jeunefille = creerChampEtiquete("Jeune fille", personne.nomJeuneFille);
+      const naissance = creerChampEtiquete("Naissance", personne.naissance);
+      const deces = creerChampEtiquete("Décès", personne.deces);
+
+      fiche.append(titre, prenom.conteneur, nom.conteneur, jeunefille.conteneur,
+        naissance.conteneur, deces.conteneur);
+
+      const actuel = conjointDe(personne);
+      const brouillon = {
+        pere: personne.pereId || "",
+        mere: personne.mereId || "",
+        conjoint: actuel ? actuel.id : ""
+      };
+      const exclus = [personne].concat(descendants(personne));
+
+      fiche.appendChild(creerChoix("Père", brouillon.pere, exclus, p => {
+        brouillon.pere = p ? p.id : "";
+      }));
+      fiche.appendChild(creerChoix("Mère", brouillon.mere, exclus, p => {
+        brouillon.mere = p ? p.id : "";
+      }));
+      fiche.appendChild(creerChoix("Conjoint", brouillon.conjoint, [personne], p => {
+        brouillon.conjoint = p ? p.id : "";
+      }));
+
+      const ok = document.createElement("button");
+      ok.textContent = "Enregistrer";
+      ok.onclick = () => {
+        if (prenom.input.value === "") return;
+        personne.prenom = prenom.input.value;
+        personne.nom = nom.input.value;
+        personne.nomJeuneFille = jeunefille.input.value;
+        personne.naissance = naissance.input.value;
+        personne.deces = deces.input.value;
+        personne.pereId = brouillon.pere;
+        personne.mereId = brouillon.mere;
+        const conjointActuel = conjointDe(personne);
+        const idActuel = conjointActuel ? conjointActuel.id : "";
+        if (String(idActuel) !== String(brouillon.conjoint)) {
+          definirConjoint(personne, brouillon.conjoint);
+        }
         sauvegarder();
         afficher();
+        afficherFiche(personne);
       };
-      return select;
+
+      const non = document.createElement("button");
+      non.textContent = "Annuler";
+      non.onclick = () => afficherFiche(personne);
+
+      fiche.append(ok, non);
     }
 
-    function creerChamp(valeur, placeholder) {
-      const input = document.createElement("input");
-      input.value = valeur || "";
-      input.placeholder = placeholder;
-      return input;
-    }
-
-    function normaliser(texte) {
-  return (texte || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-function creerLien(personne) {
-  const bouton = document.createElement("button");
-  bouton.textContent = libelle(personne);
-  bouton.onclick = () => afficherFiche(personne);
-  return bouton;
-}
-
-function rechercher() {
-  const saisie = normaliser(document.getElementById("recherche").value.trim());
-  const zone = document.getElementById("resultats");
-  zone.innerHTML = "";
-  document.getElementById("fiche").innerHTML = "";
-  if (saisie === "") return;
-
-  const mots = saisie.split(" ");
-  const trouves = personnes.filter(p => {
-    const texte = normaliser(p.prenom + " " + p.nom + " " + (p.nomJeuneFille || ""));
-    return mots.every(mot => texte.includes(mot));
-  });
-
-  if (trouves.length === 0) {
-    zone.textContent = "Aucun résultat.";
-    return;
-  }
-  for (const p of trouves) {
-    const div = document.createElement("div");
-    div.appendChild(creerLien(p));
-    zone.appendChild(div);
-  }
-}
-
-function ajouterParent(fiche, etiquette, id) {
-  const ligne = document.createElement("p");
-  ligne.textContent = etiquette + " : ";
-  const parent = personnes.find(x => String(x.id) === String(id));
-  if (parent) {
-    ligne.appendChild(creerLien(parent));
-  } else {
-    ligne.append("non renseigné");
-  }
-  fiche.appendChild(ligne);
-}
-
-function afficherFiche(personne) {
-  document.getElementById("resultats").innerHTML = "";
-  const fiche = document.getElementById("fiche");
-  fiche.innerHTML = "";
-
-  const titre = document.createElement("h3");
-  titre.textContent = personne.prenom + " " + personne.nom;
-  fiche.appendChild(titre);
-
-  if (personne.nomJeuneFille) {
-    const p = document.createElement("p");
-    p.textContent = "Nom de jeune fille : " + personne.nomJeuneFille;
-    fiche.appendChild(p);
-  }
-  if (personne.naissance) {
-    const p = document.createElement("p");
-    p.textContent = "Année de naissance : " + personne.naissance;
-    fiche.appendChild(p);
-  }
-
-  ajouterParent(fiche, "Père", personne.pereId);
-  ajouterParent(fiche, "Mère", personne.mereId);
-
-  const enfants = enfantsDe(personne);
-  const titreEnfants = document.createElement("p");
-  titreEnfants.textContent = enfants.length === 0 ? "Enfants : aucun enregistré" : "Enfants :";
-  fiche.appendChild(titreEnfants);
-
-  if (enfants.length > 0) {
-    const ul = document.createElement("ul");
-    for (const enfant of enfants) {
-      const li = document.createElement("li");
-      li.appendChild(creerLien(enfant));
-      ul.appendChild(li);
-    }
-    fiche.appendChild(ul);
-  }
-  const voir = document.createElement("button");
-voir.textContent = "Voir dans l'arbre";
-voir.onclick = () => voirDansArbre(personne);
-fiche.appendChild(voir);
-}
-    
     function suggerer(champ) {
-  const saisie = normaliser(champ.value.trim());
-  const liste = document.getElementById("noms-connus");
-  liste.innerHTML = "";
-  if (saisie === "") return;
+      const zone = document.getElementById("suggestions");
+      zone.innerHTML = "";
+      const saisie = normaliser(champ.value.trim());
+      if (saisie === "") return;
 
-  const noms = [];
-  for (const p of personnes) {
-    for (const nom of [p.nom, p.nomJeuneFille]) {
-      if (nom && normaliser(nom).startsWith(saisie) && !noms.includes(nom)) {
-        noms.push(nom);
+      const noms = [];
+      for (const p of personnes) {
+        for (const nom of [p.nom, p.nomJeuneFille]) {
+          if (nom && normaliser(nom).startsWith(saisie) && !noms.includes(nom)) {
+            noms.push(nom);
+          }
+        }
+      }
+      noms.sort();
+
+      for (const nom of noms.slice(0, 6)) {
+        if (nom === champ.value) continue;
+        const bouton = document.createElement("button");
+        bouton.textContent = nom;
+        bouton.onclick = () => {
+          champ.value = nom;
+          cacherSuggestions();
+          document.getElementById("jeunefille").focus();
+        };
+        zone.appendChild(bouton);
       }
     }
-  }
-  noms.sort();
 
-  for (const nom of noms) {
-    const option = document.createElement("option");
-    option.value = nom;
-    liste.appendChild(option);
-  }
-}
-    function afficher() {
-      const liste = document.getElementById("liste");
-      liste.innerHTML = "";
-      for (const p of personnes) {
-        const li = document.createElement("li");
+    function cacherSuggestions() {
+      document.getElementById("suggestions").innerHTML = "";
+    }
 
-        if (p === enEdition) {
-          const prenom = creerChamp(p.prenom, "Prénom");
-          const nom = creerChamp(p.nom, "Nom");
-          const jeunefille = creerChamp(p.nomJeuneFille, "Nom de jeune fille");
-          const naissance = creerChamp(p.naissance, "Année de naissance");
-          nom.setAttribute("list", "noms-connus");
-nom.oninput = () => suggerer(nom);
-jeunefille.setAttribute("list", "noms-connus");
-jeunefille.oninput = () => suggerer(jeunefille);
+    function definirConjoint(personne, idConjoint) {
+      const ancien = conjointDe(personne);
+      if (ancien) ancien.conjointId = "";
+      personne.conjointId = "";
 
-          const ok = document.createElement("button");
-          ok.textContent = "Enregistrer";
-          ok.onclick = () => {
-            if (prenom.value === "") return;
-            p.prenom = prenom.value;
-            p.nom = nom.value;
-            p.nomJeuneFille = jeunefille.value;
-            p.naissance = naissance.value;
-            enEdition = null;
-            sauvegarder();
-            afficher();
-          };
-
-          const non = document.createElement("button");
-          non.textContent = "Annuler";
-          non.onclick = () => {
-            enEdition = null;
-            afficher();
-          };
-
-          li.append(prenom, nom, jeunefille, naissance, ok, non);
-        } else {
-          li.textContent = libelle(p) + " ";
-          li.appendChild(creerMenu(p, "pereId", "Père : aucun"));
-          li.appendChild(creerMenu(p, "mereId", "Mère : aucune"));
-
-          const modifier = document.createElement("button");
-          modifier.textContent = "Modifier";
-          modifier.onclick = () => {
-            enEdition = p;
-            afficher();
-          };
-          li.appendChild(modifier);
-
-          const bouton = document.createElement("button");
-          bouton.textContent = "Supprimer";
-          bouton.onclick = () => supprimer(p);
-          li.appendChild(bouton);
-        }
-
-        liste.appendChild(li);
+      const nouveau = trouver(idConjoint);
+      if (nouveau) {
+        const ancienDuNouveau = conjointDe(nouveau);
+        if (ancienDuNouveau) ancienDuNouveau.conjointId = "";
+        nouveau.conjointId = personne.id;
+        personne.conjointId = nouveau.id;
       }
+      sauvegarder();
+      afficher();
+    }
+
+    function afficher() {
       afficherArbre();
-      document.getElementById("annuler").style.display = derniereSuppression ? "inline" : "none";
+      const visible = derniereSuppression ? "inline" : "none";
+      document.getElementById("annuler").style.display = visible;
+      document.getElementById("annuler-recherche").style.display = visible;
       remplirChoix();
     }
+
+    function calculerCarte() {
+      const index = new Map();
+      for (const p of personnes) index.set(String(p.id), p);
+      const lire = id => index.get(String(id));
+      const conjointLocal = p => {
+        const c = lire(p.conjointId);
+        return (c && c !== p && String(c.conjointId) === String(p.id)) ? c : null;
+      };
+
+      const enfantsParPersonne = new Map();
+      for (const p of personnes) {
+        for (const id of [p.pereId, p.mereId]) {
+          const parent = lire(id);
+          if (parent && parent !== p) {
+            if (!enfantsParPersonne.has(parent)) enfantsParPersonne.set(parent, []);
+            const liste = enfantsParPersonne.get(parent);
+            if (!liste.includes(p)) liste.push(p);
+          }
+        }
+      }
+
+      const gen = new Map();
+      for (const depart of personnes) {
+        if (gen.has(depart)) continue;
+        gen.set(depart, 0);
+        const composante = [depart];
+        for (let i = 0; i < composante.length; i++) {
+          const p = composante[i];
+          const g = gen.get(p);
+          const voisins = [];
+          const pere = lire(p.pereId);
+          const mere = lire(p.mereId);
+          if (pere) voisins.push([pere, g - 1]);
+          if (mere) voisins.push([mere, g - 1]);
+          for (const e of (enfantsParPersonne.get(p) || [])) voisins.push([e, g + 1]);
+          const c = conjointLocal(p);
+          if (c) voisins.push([c, g]);
+          for (const [v, gv] of voisins) {
+            if (!gen.has(v)) {
+              gen.set(v, gv);
+              composante.push(v);
+            }
+          }
+        }
+        let min = Infinity;
+        for (const p of composante) min = Math.min(min, gen.get(p));
+        for (const p of composante) gen.set(p, gen.get(p) - min);
+      }
+
+      const uniteDe = new Map();
+      const unites = [];
+      for (const p of personnes) {
+        if (uniteDe.has(p)) continue;
+        const c = conjointLocal(p);
+        const membres = (c && !uniteDe.has(c)) ? [p, c] : [p];
+        const unite = { membres: membres, parent: null, enfants: [], largeurSous: 0 };
+        for (const m of membres) uniteDe.set(m, unite);
+        unites.push(unite);
+      }
+
+      const parentsDe = p => [lire(p.pereId), lire(p.mereId)].filter(x => x && x !== p);
+      for (const u of unites) {
+        if (u.membres.length === 2 &&
+            parentsDe(u.membres[0]).length === 0 &&
+            parentsDe(u.membres[1]).length > 0) {
+          u.membres.reverse();
+        }
+        const parents = parentsDe(u.membres[0]);
+        if (parents.length > 0) {
+          const uniteParente = uniteDe.get(parents[0]);
+          if (uniteParente && uniteParente !== u) u.parent = uniteParente;
+        }
+      }
+
+      for (const u of unites) {
+        const vus = new Set();
+        let v = u;
+        while (v && !vus.has(v)) {
+          vus.add(v);
+          v = v.parent;
+        }
+        if (v) u.parent = null;
+      }
+
+      for (const u of unites) {
+        if (u.parent) u.parent.enfants.push(u);
+      }
+      const annee = u => {
+        const n = parseInt(u.membres[0].naissance, 10);
+        return isNaN(n) ? 99999 : n;
+      };
+      for (const u of unites) u.enfants.sort((a, b) => annee(a) - annee(b));
+
+      const largeurUnite = u =>
+        u.membres.length * LARGEUR_BOITE + (u.membres.length - 1) * ECART_COUPLE;
+
+      function largeurEnfants(u) {
+        let total = 0;
+        for (const e of u.enfants) total += e.largeurSous;
+        if (u.enfants.length > 1) total += (u.enfants.length - 1) * ESPACE;
+        return total;
+      }
+
+      function mesurer(u) {
+        for (const e of u.enfants) mesurer(e);
+        u.largeurSous = Math.max(largeurUnite(u), largeurEnfants(u));
+      }
+
+      const positions = new Map();
+      function placer(u, xGauche) {
+        const xUnite = xGauche + (u.largeurSous - largeurUnite(u)) / 2;
+        u.membres.forEach((m, i) => {
+          positions.set(m, {
+            x: xUnite + LARGEUR_BOITE / 2 + i * (LARGEUR_BOITE + ECART_COUPLE),
+            y: 20 + gen.get(m) * HAUTEUR_LIGNE
+          });
+        });
+        let x = xGauche + (u.largeurSous - largeurEnfants(u)) / 2;
+        for (const e of u.enfants) {
+          placer(e, x);
+          x += e.largeurSous + ESPACE;
+        }
+      }
+
+      let xCourant = 20;
+      for (const u of unites) {
+        if (!u.parent) {
+          mesurer(u);
+          placer(u, xCourant);
+          xCourant += u.largeurSous + 3 * ESPACE;
+        }
+      }
+
+      let genMax = 0;
+      for (const g of gen.values()) genMax = Math.max(genMax, g);
+
+      return {
+        positions: positions,
+        unites: unites,
+        lire: lire,
+        conjointLocal: conjointLocal,
+        largeur: xCourant + 20,
+        hauteur: 20 + (genMax + 1) * HAUTEUR_LIGNE
+      };
+    }
+
+    function defiler(personne, doux) {
+      const position = positionsArbre.get(personne);
+      if (!position) return;
+      const zone = document.getElementById("arbre-zone");
+      zone.scrollTo({
+        left: position.x * zoom - zone.clientWidth / 2,
+        top: (position.y + HAUTEUR_BOITE / 2) * zoom - zone.clientHeight / 2,
+        behavior: doux ? "smooth" : "auto"
+      });
+    }
+
+    function mettreCentre(personne, doux) {
+      const boite = boitesArbre.get(personne);
+      if (!boite) {
+        personneCentrale = personne;
+        afficherArbre();
+        return;
+      }
+      const ancienne = boitesArbre.get(personneCentrale);
+      if (ancienne) ancienne.className = "boite";
+      personneCentrale = personne;
+      boite.className = "boite centre";
+      defiler(personne, doux);
+    }
+
+    function centrer(personne) {
+      if (personneCentrale && personneCentrale !== personne) {
+        historiqueArbre.push(personneCentrale);
+      }
+      mettreCentre(personne, true);
+    }
+
+    function retourArbre() {
+      while (historiqueArbre.length > 0) {
+        const precedente = historiqueArbre.pop();
+        if (personnes.includes(precedente)) {
+          mettreCentre(precedente, true);
+          return;
+        }
+      }
+    }
+
+    function voirDansArbre(personne) {
+      if (personneCentrale && personneCentrale !== personne) {
+        historiqueArbre.push(personneCentrale);
+      }
+      personneCentrale = personne;
+      aller("arbre");
+    }
+
+    function appliquerZoom(nouveau) {
+      nouveau = Math.min(2, Math.max(0.05, nouveau));
+      if (!enveloppeArbre) {
+        zoom = nouveau;
+        return;
+      }
+      const zone = document.getElementById("arbre-zone");
+      const cx = (zone.scrollLeft + zone.clientWidth / 2) / zoom;
+      const cy = (zone.scrollTop + zone.clientHeight / 2) / zoom;
+      zoom = nouveau;
+      enveloppeArbre.style.width = (largeurArbre * zoom) + "px";
+      enveloppeArbre.style.height = (hauteurArbre * zoom) + "px";
+      planArbre.style.transform = "scale(" + zoom + ")";
+      zone.scrollLeft = cx * zoom - zone.clientWidth / 2;
+      zone.scrollTop = cy * zoom - zone.clientHeight / 2;
+    }
+
+    function changerZoom(facteur) {
+      appliquerZoom(zoom * facteur);
+    }
+
+    function ajusterZoom() {
+      if (!enveloppeArbre) return;
+      const zone = document.getElementById("arbre-zone");
+      appliquerZoom(Math.min(
+        1,
+        (zone.clientWidth - 4) / largeurArbre,
+        (zone.clientHeight - 4) / hauteurArbre
+      ));
+    }
+
+    function afficherArbre() {
+      const zone = document.getElementById("arbre-zone");
+      const zoneAller = document.getElementById("choix-aller");
+      zone.innerHTML = "";
+      zoneAller.innerHTML = "";
+      enveloppeArbre = null;
+      boitesArbre = new Map();
+      positionsArbre = new Map();
+
+      if (personnes.length === 0) {
+        zone.textContent = "Aucune personne enregistrée.";
+        return;
+      }
+      if (!personneCentrale || !personnes.includes(personneCentrale)) {
+        personneCentrale = personnes[0];
+      }
+
+      zoneAller.appendChild(creerChoix("Aller à", "", [], p => {
+        if (p) centrer(p);
+      }));
+
+      const carte = calculerCarte();
+      const positions = carte.positions;
+      positionsArbre = positions;
+      const largeur = carte.largeur;
+      const hauteur = carte.hauteur;
+
+      const plan = document.createElement("div");
+      plan.style.position = "relative";
+      plan.style.width = largeur + "px";
+      plan.style.height = hauteur + "px";
+      plan.style.transformOrigin = "0 0";
+      plan.style.transform = "scale(" + zoom + ")";
+
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("width", largeur);
+      svg.setAttribute("height", hauteur);
+      svg.style.position = "absolute";
+      svg.style.left = "0";
+      svg.style.top = "0";
+      plan.appendChild(svg);
+
+      function tracer(x1, y1, x2, y2, couleur) {
+        const milieu = (y1 + y2) / 2;
+        const ligne = document.createElementNS(svgNS, "polyline");
+        ligne.setAttribute("points",
+          x1 + "," + y1 + " " + x1 + "," + milieu + " " +
+          x2 + "," + milieu + " " + x2 + "," + y2);
+        ligne.setAttribute("fill", "none");
+        ligne.setAttribute("stroke", couleur || "#2e7d32");
+        ligne.setAttribute("stroke-width", "2");
+        svg.appendChild(ligne);
+      }
+
+      for (const u of carte.unites) {
+        if (u.membres.length === 2) {
+          const a = positions.get(u.membres[0]);
+          const b = positions.get(u.membres[1]);
+          const yMilieu = a.y + HAUTEUR_BOITE / 2;
+          tracer(a.x + LARGEUR_BOITE / 2, yMilieu, b.x - LARGEUR_BOITE / 2, yMilieu, "#c2185b");
+        }
+      }
+
+      for (const p of personnes) {
+        const pos = positions.get(p);
+        const pere = carte.lire(p.pereId);
+        const mere = carte.lire(p.mereId);
+        if (pere && mere && pere !== mere && carte.conjointLocal(pere) === mere) {
+          const a = positions.get(pere);
+          const b = positions.get(mere);
+          tracer((a.x + b.x) / 2, (a.y + b.y) / 2 + HAUTEUR_BOITE / 2, pos.x, pos.y);
+        } else {
+          for (const q of [pere, mere]) {
+            if (q && q !== p) {
+              const a = positions.get(q);
+              tracer(a.x, a.y + HAUTEUR_BOITE, pos.x, pos.y);
+            }
+          }
+        }
+      }
+
+      for (const p of personnes) {
+        const pos = positions.get(p);
+        const div = document.createElement("div");
+        div.className = p === personneCentrale ? "boite centre" : "boite";
+        div.style.left = (pos.x - LARGEUR_BOITE / 2) + "px";
+        div.style.top = pos.y + "px";
+
+        const nom = document.createElement("strong");
+        nom.textContent = p.prenom + " " + p.nom;
+        div.appendChild(nom);
+
+        const details = [];
+        if (p.nomJeuneFille) details.push("née " + p.nomJeuneFille);
+        const d = dates(p);
+        if (d) details.push(d);
+        if (details.length > 0) {
+          const petit = document.createElement("span");
+          petit.textContent = details.join(" – ");
+          div.appendChild(petit);
+        }
+
+        div.onclick = () => centrer(p);
+        boitesArbre.set(p, div);
+        plan.appendChild(div);
+      }
+
+      const enveloppe = document.createElement("div");
+      enveloppe.style.position = "relative";
+      enveloppe.style.overflow = "hidden";
+      enveloppe.style.width = (largeur * zoom) + "px";
+      enveloppe.style.height = (hauteur * zoom) + "px";
+      enveloppe.appendChild(plan);
+      zone.appendChild(enveloppe);
+
+      enveloppeArbre = enveloppe;
+      planArbre = plan;
+      largeurArbre = largeur;
+      hauteurArbre = hauteur;
+
+      defiler(personneCentrale, false);
+    }
+
+    const zoneArbre = document.getElementById("arbre-zone");
+    let distanceDepart = 0;
+    let zoomDepart = 1;
+
+    function distanceDoigts(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    zoneArbre.addEventListener("touchstart", e => {
+      if (e.touches.length === 2) {
+        distanceDepart = distanceDoigts(e.touches);
+        zoomDepart = zoom;
+      }
+    }, { passive: true });
+
+    zoneArbre.addEventListener("touchmove", e => {
+      if (e.touches.length === 2 && distanceDepart > 0) {
+        appliquerZoom(zoomDepart * distanceDoigts(e.touches) / distanceDepart);
+      }
+    }, { passive: true });
+
+    zoneArbre.addEventListener("touchend", () => {
+      distanceDepart = 0;
+    }, { passive: true });
 
     afficher();
 
