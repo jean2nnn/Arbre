@@ -7,21 +7,42 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2e7d32">
   <style>
-    body { font-family: sans-serif; margin: 16px auto; max-width: 700px; padding: 0 12px; }
-    .menu button { display: block; width: 100%; padding: 22px; margin: 14px 0; font-size: 1.3em; }
-    input, select, button { font-size: 1em; margin: 3px; }
+    :root { --vert: #2e7d32; --vert-clair: #e8f5e9; --vert-moyen: #a5d6a7; --creme: #fbf7ee; --rose: #d81b60; --ocre: #ef6c00; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: Georgia, "Times New Roman", serif; margin: 0 auto; max-width: 700px; padding: 0 14px 30px; color: #2b2b2b; background: linear-gradient(180deg, #e8f5e9 0%, #fbf7ee 45%, #fdf3e3 100%); background-attachment: fixed; min-height: 100vh; }
+    h1, h2, h3 { color: #1b5e20; }
+    h1 { text-align: center; font-size: 2em; margin: 28px 0 8px; letter-spacing: 0.5px; }
+    h1::after { content: "🌳"; display: block; font-size: 1.6em; margin-top: 4px; }
+    h2 { border-bottom: 2px solid var(--vert-moyen); padding-bottom: 6px; }
+    button, input { font-family: inherit; }
+    button { font-size: 1em; margin: 3px; padding: 8px 14px; border: none; border-radius: 20px; background: var(--vert); color: white; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    button:active { transform: scale(0.97); box-shadow: none; }
+    input { font-size: 1em; margin: 3px; border: 1px solid #bcc9b8; border-radius: 12px; background: white; }
     li { margin: 10px 0; }
-    .formulaire input, .formulaire select { display: block; width: 100%; box-sizing: border-box; padding: 8px; margin: 6px 0; }
-    .formulaire button { padding: 10px 16px; }
-    .suggestions button { display: block; width: 100%; text-align: left; padding: 10px; margin: 0; background: #e8f5e9; border: 1px solid #a5d6a7; }
+    .menu { margin-top: 18px; }
+    .menu button { display: block; width: 100%; padding: 22px; margin: 16px 0; font-size: 1.4em; border-radius: 40px; box-shadow: 0 4px 8px rgba(0,0,0,0.22); letter-spacing: 0.5px; }
+    .menu button:nth-child(1) { background: linear-gradient(135deg, #43a047, #2e7d32); }
+    .menu button:nth-child(2) { background: linear-gradient(135deg, #fb8c00, #ef6c00); }
+    .menu button:nth-child(3) { background: linear-gradient(135deg, #ec407a, #c2185b); }
+    #page-accueil > p { text-align: center; }
+    #page-accueil > p button { background: #607d8b; }
+    .formulaire { background: rgba(255,255,255,0.75); padding: 12px 14px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .formulaire input { display: block; width: 100%; box-sizing: border-box; padding: 10px 12px; margin: 6px 0; }
+    .formulaire button { padding: 11px 20px; }
+    .suggestions button { display: block; width: 100%; text-align: left; padding: 10px 12px; margin: 2px 0; background: var(--vert-clair); color: #1b5e20; border: 1px solid var(--vert-moyen); border-radius: 10px; box-shadow: none; }
+    .suggestions button.fermer { background: #fff3e0; color: #bf360c; border-color: #ffcc80; text-align: center; font-size: 0.9em; }
     .choix { margin: 4px 0; }
     .choix span { display: inline-block; width: 110px; }
-    .choix input { display: inline-block; width: calc(100% - 120px); box-sizing: border-box; padding: 6px; margin: 3px 0; }
-    #arbre-zone { overflow: auto; height: 58vh; border: 1px solid #aaa; background: #f6f8f4; touch-action: pan-x pan-y; }
-    .boite { position: absolute; box-sizing: border-box; border: 2px solid #2e7d32; border-radius: 8px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .choix input { display: inline-block; width: calc(100% - 120px); box-sizing: border-box; padding: 8px 10px; margin: 3px 0; }
+    #resultats button { background: white; color: #1b5e20; border: 1px solid var(--vert-moyen); box-shadow: none; }
+    #fiche { background: rgba(255,255,255,0.8); border-radius: 16px; padding: 4px 14px; margin-top: 10px; }
+    #fiche button { margin: 3px 3px; }
+    #recherche { width: 100%; box-sizing: border-box; padding: 10px 12px; }
+    #arbre-zone { overflow: auto; height: 58vh; border: 2px solid var(--vert-moyen); border-radius: 14px; background: #fffdf6 radial-gradient(circle, #e3ecd9 1px, transparent 1px) 0 0 / 22px 22px; touch-action: pan-x pan-y; }
+    .boite { position: absolute; box-sizing: border-box; border: 2px solid var(--vert); border-radius: 12px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 2px 5px rgba(0,0,0,0.18); }
     .boite.centre { background: #c8e6c9; border-width: 3px; }
     .boite .texte { width: 100%; height: 100%; box-sizing: border-box; padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; text-align: center; line-height: 1.15; overflow-wrap: anywhere; font-size: 0.8em; }
-    .boite .pm { position: absolute; right: -9px; top: -9px; width: 22px; height: 22px; padding: 0; margin: 0; border-radius: 11px; border: 1px solid #2e7d32; background: white; color: #2e7d32; font-size: 15px; line-height: 1; cursor: pointer; }
+    .boite .pm { position: absolute; right: -9px; top: -9px; width: 22px; height: 22px; padding: 0; margin: 0; border-radius: 11px; border: 1px solid var(--vert); background: white; color: var(--vert); font-size: 15px; line-height: 1; cursor: pointer; box-shadow: none; }
   </style>
 </head>
 <body>
@@ -45,9 +66,10 @@
     <h2>Ajouter une personne</h2>
     <div class="formulaire">
       <input id="prenom" placeholder="Prénom" autocomplete="off">
-      <input id="nom" placeholder="Nom" autocomplete="off" oninput="suggerer(this)" onblur="setTimeout(cacherSuggestions, 200)">
+      <input id="nom" placeholder="Nom" autocomplete="off" oninput="suggerer(this, 'suggestions', 'jeunefille')" onblur="setTimeout(() => cacherSuggestions('suggestions'), 200)">
       <div id="suggestions" class="suggestions"></div>
-      <input id="jeunefille" placeholder="Nom de jeune fille" autocomplete="off">
+      <input id="jeunefille" placeholder="Nom de jeune fille" autocomplete="off" oninput="suggerer(this, 'suggestions-jf', 'naissance')" onblur="setTimeout(() => cacherSuggestions('suggestions-jf'), 200)">
+      <div id="suggestions-jf" class="suggestions"></div>
       <input id="naissance" placeholder="Année de naissance" autocomplete="off">
       <input id="deces" placeholder="Année de décès (si décédé)" autocomplete="off">
       <div id="choix-pere"></div>
@@ -248,13 +270,13 @@
     }
 
     function ajouter() {
-      const prenom = document.getElementById("prenom").value;
+      const prenom = majusculesNom(document.getElementById("prenom").value);
       if (prenom === "") return;
       const personne = {
         id: Date.now(),
         prenom: prenom,
-        nom: document.getElementById("nom").value,
-        nomJeuneFille: document.getElementById("jeunefille").value,
+        nom: majusculesNom(document.getElementById("nom").value),
+        nomJeuneFille: majusculesNom(document.getElementById("jeunefille").value),
         naissance: document.getElementById("naissance").value,
         deces: document.getElementById("deces").value,
         pereId: choixAjout.pere,
@@ -272,7 +294,8 @@
       document.getElementById("naissance").value = "";
       document.getElementById("deces").value = "";
       choixAjout = { pere: "", mere: "", conjoint: "" };
-      cacherSuggestions();
+      cacherSuggestions("suggestions");
+      cacherSuggestions("suggestions-jf");
       afficher();
     }
 
@@ -498,9 +521,9 @@
       ok.textContent = "Enregistrer";
       ok.onclick = () => {
         if (prenom.input.value === "") return;
-        personne.prenom = prenom.input.value;
-        personne.nom = nom.input.value;
-        personne.nomJeuneFille = jeunefille.input.value;
+        personne.prenom = majusculesNom(prenom.input.value);
+        personne.nom = majusculesNom(nom.input.value);
+        personne.nomJeuneFille = majusculesNom(jeunefille.input.value);
         personne.naissance = naissance.input.value;
         personne.deces = deces.input.value;
         personne.pereId = brouillon.pere;
@@ -522,8 +545,8 @@
       fiche.append(ok, non);
     }
 
-    function suggerer(champ) {
-      const zone = document.getElementById("suggestions");
+    function suggerer(champ, zoneId, suivantId) {
+      const zone = document.getElementById(zoneId);
       zone.innerHTML = "";
       const saisie = normaliser(champ.value.trim());
       if (saisie === "") return;
@@ -538,21 +561,49 @@
       }
       noms.sort();
 
+      let nb = 0;
       for (const nom of noms.slice(0, 6)) {
         if (nom === champ.value) continue;
         const bouton = document.createElement("button");
         bouton.textContent = nom;
         bouton.onclick = () => {
           champ.value = nom;
-          cacherSuggestions();
-          document.getElementById("jeunefille").focus();
+          cacherSuggestions(zoneId);
+          document.getElementById(suivantId).focus();
         };
         zone.appendChild(bouton);
+        nb++;
+      }
+      if (nb > 0) {
+        const fermer = document.createElement("button");
+        fermer.className = "fermer";
+        fermer.textContent = "✕ Fermer les suggestions";
+        fermer.onclick = () => cacherSuggestions(zoneId);
+        zone.appendChild(fermer);
       }
     }
 
-    function cacherSuggestions() {
-      document.getElementById("suggestions").innerHTML = "";
+    function cacherSuggestions(zoneId) {
+      document.getElementById(zoneId).innerHTML = "";
+    }
+
+    const PARTICULES = ["de", "du", "des", "le", "la", "les", "van", "von", "der", "den", "di", "da", "dos", "del", "al", "el", "y", "et", "ter", "ten"];
+
+    function majusculesNom(texte) {
+      const mots = texte.trim().split(/\s+/).filter(m => m !== "");
+      return mots.map((mot, i) => {
+        const bas = mot.toLowerCase();
+        if (i > 0 && PARTICULES.includes(bas)) return bas;
+        // gérer les tirets et apostrophes : jean-pierre → Jean-Pierre, d'artagnan → d'Artagnan
+        return bas.split("-").map(partie => {
+          const morceaux = partie.split(/(['’])/);
+          return morceaux.map((m, k) => {
+            if (m === "'" || m === "’" || m === "") return m;
+            if (k === 0 && morceaux.length > 1 && ["d", "l"].includes(m) && i > 0) return m;
+            return m.charAt(0).toUpperCase() + m.slice(1);
+          }).join("");
+        }).join("-");
+      }).join(" ");
     }
 
     function definirConjoint(personne, idConjoint) {
