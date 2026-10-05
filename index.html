@@ -75,6 +75,7 @@
       <div id="choix-pere"></div>
       <div id="choix-mere"></div>
       <div id="choix-conjoint"></div>
+      <div id="choix-enfants"></div>
       <button onclick="ajouter()">Ajouter</button>
       <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
     </div>
@@ -114,6 +115,7 @@
     let personnes = JSON.parse(localStorage.getItem("personnes")) || [];
     let derniereSuppression = null;
     let choixAjout = { pere: "", mere: "", conjoint: "" };
+    let selecteurEnfants = null;
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
 
@@ -180,7 +182,7 @@
       return (texte || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     }
 
-    function creerChoix(etiquette, valeurId, exclus, quandChoisi) {
+    function creerChoix(etiquette, valeurId, exclus, quandChoisi, vider) {
       let choisiId = valeurId;
 
       const conteneur = document.createElement("div");
@@ -222,9 +224,14 @@
           const bouton = document.createElement("button");
           bouton.textContent = libelle(p);
           bouton.onclick = () => {
-            choisiId = p.id;
-            champ.value = libelle(p);
             zone.innerHTML = "";
+            if (vider) {
+              choisiId = "";
+              champ.value = "";
+            } else {
+              choisiId = p.id;
+              champ.value = libelle(p);
+            }
             quandChoisi(p);
           };
           zone.appendChild(bouton);
@@ -267,6 +274,12 @@
           choixAjout[cle] = p ? p.id : "";
         }));
       }
+      if (!selecteurEnfants) {
+        selecteurEnfants = creerEnfants([]);
+        const zoneEnfants = document.getElementById("choix-enfants");
+        zoneEnfants.innerHTML = "";
+        zoneEnfants.appendChild(selecteurEnfants.conteneur);
+      }
     }
 
     function ajouter() {
@@ -285,6 +298,8 @@
       };
       personnes.push(personne);
       if (choixAjout.conjoint) definirConjoint(personne, choixAjout.conjoint);
+      if (selecteurEnfants) rattacherEnfants(personne, selecteurEnfants.etat);
+      selecteurEnfants = null;
       sauvegarder();
       document.getElementById("message").textContent =
         "✔ " + (personne.prenom + " " + personne.nom).trim() + " ajouté(e).";
@@ -374,6 +389,96 @@
       return resultat;
     }
 
+    function ancetres(p, vus) {
+      vus = vus || new Set();
+      for (const id of [p.pereId, p.mereId]) {
+        const parent = trouver(id);
+        if (parent && !vus.has(parent)) {
+          vus.add(parent);
+          ancetres(parent, vus);
+        }
+      }
+      return Array.from(vus);
+    }
+
+    function fratrie(personne) {
+      const meme = (a, b) => a !== "" && a !== undefined && String(a) === String(b);
+      const res = [];
+      for (const p of personnes) {
+        if (p === personne) continue;
+        const pere = meme(personne.pereId, p.pereId);
+        const mere = meme(personne.mereId, p.mereId);
+        if (pere || mere) res.push({ personne: p, complet: pere && mere });
+      }
+      return res;
+    }
+
+    function creerEnfants(exclusDepart) {
+      const etat = { role: "pere", ids: [] };
+      const exclus = exclusDepart.slice();
+
+      const conteneur = document.createElement("div");
+      conteneur.className = "choix";
+      conteneur.style.marginTop = "10px";
+
+      const ligne = document.createElement("div");
+      ligne.append("Enfants déjà enregistrés, rattachés comme : ");
+      const role = document.createElement("select");
+      role.innerHTML = '<option value="pere">Père</option><option value="mere">Mère</option>';
+      role.onchange = () => { etat.role = role.value; };
+      ligne.appendChild(role);
+
+      const liste = document.createElement("div");
+      const dessiner = () => {
+        liste.innerHTML = "";
+        for (const id of etat.ids) {
+          const e = trouver(id);
+          if (!e) continue;
+          const d = document.createElement("div");
+          d.append("• " + libelle(e) + " ");
+          const x = document.createElement("button");
+          x.textContent = "✕";
+          x.onclick = () => {
+            etat.ids = etat.ids.filter(i => i !== id);
+            const k = exclus.indexOf(e);
+            if (k >= 0) exclus.splice(k, 1);
+            dessiner();
+          };
+          d.appendChild(x);
+          liste.appendChild(d);
+        }
+      };
+
+      const champ = creerChoix("Ajouter un enfant", "", exclus, p => {
+        if (p && !etat.ids.includes(p.id)) {
+          etat.ids.push(p.id);
+          exclus.push(p);
+          dessiner();
+        }
+      }, true);
+
+      conteneur.append(ligne, liste, champ);
+      return { conteneur: conteneur, etat: etat };
+    }
+
+    function rattacherEnfants(parent, etat) {
+      const cle = etat.role === "pere" ? "pereId" : "mereId";
+      const nomRole = etat.role === "pere" ? "un père" : "une mère";
+      for (const id of etat.ids) {
+        const enfant = trouver(id);
+        if (!enfant || enfant === parent) continue;
+        if (descendants(enfant).includes(parent)) {
+          alert(libelle(enfant) + " ne peut pas être enfant de " + libelle(parent) + " (déjà son ancêtre).");
+          continue;
+        }
+        const ancien = trouver(enfant[cle]);
+        if (ancien && ancien !== parent) {
+          if (!confirm(libelle(enfant) + " a déjà " + nomRole + " (" + libelle(ancien) + "). Remplacer ?")) continue;
+        }
+        enfant[cle] = parent.id;
+      }
+    }
+
     function creerLien(personne) {
       const bouton = document.createElement("button");
       bouton.textContent = libelle(personne);
@@ -447,6 +552,21 @@
       const conjoint = conjointDe(personne);
       ajouterParent(fiche, "Conjoint", conjoint ? conjoint.id : "");
 
+      const freres = fratrie(personne);
+      const titreFreres = document.createElement("p");
+      titreFreres.textContent = freres.length === 0 ? "Frères et sœurs : aucun enregistré" : "Frères et sœurs :";
+      fiche.appendChild(titreFreres);
+      if (freres.length > 0) {
+        const ulF = document.createElement("ul");
+        for (const f of freres) {
+          const li = document.createElement("li");
+          li.appendChild(creerLien(f.personne));
+          if (!f.complet) li.append(" (demi-frère/sœur)");
+          ulF.appendChild(li);
+        }
+        fiche.appendChild(ulF);
+      }
+
       const enfants = enfantsDe(personne);
       const titreEnfants = document.createElement("p");
       titreEnfants.textContent = enfants.length === 0 ? "Enfants : aucun enregistré" : "Enfants :";
@@ -517,6 +637,10 @@
         brouillon.conjoint = p ? p.id : "";
       }));
 
+      const exclusEnfants = [personne].concat(ancetres(personne), enfantsDe(personne));
+      const selEnfants = creerEnfants(exclusEnfants);
+      fiche.appendChild(selEnfants.conteneur);
+
       const ok = document.createElement("button");
       ok.textContent = "Enregistrer";
       ok.onclick = () => {
@@ -528,6 +652,7 @@
         personne.deces = deces.input.value;
         personne.pereId = brouillon.pere;
         personne.mereId = brouillon.mere;
+        rattacherEnfants(personne, selEnfants.etat);
         const conjointActuel = conjointDe(personne);
         const idActuel = conjointActuel ? conjointActuel.id : "";
         if (String(idActuel) !== String(brouillon.conjoint)) {
@@ -593,13 +718,16 @@
       const mots = texte.trim().split(/\s+/).filter(m => m !== "");
       return mots.map((mot, i) => {
         const bas = mot.toLowerCase();
-        if (i > 0 && PARTICULES.includes(bas)) return bas;
+        if (PARTICULES.includes(bas)) {
+          // particule tapée en minuscules : on la garde ; sinon majuscule initiale
+          return (mot === bas) ? bas : bas.charAt(0).toUpperCase() + bas.slice(1);
+        }
         // gérer les tirets et apostrophes : jean-pierre → Jean-Pierre, d'artagnan → d'Artagnan
         return bas.split("-").map(partie => {
           const morceaux = partie.split(/(['’])/);
           return morceaux.map((m, k) => {
             if (m === "'" || m === "’" || m === "") return m;
-            if (k === 0 && morceaux.length > 1 && ["d", "l"].includes(m) && i > 0) return m;
+            if (k === 0 && morceaux.length > 1 && ["d", "l"].includes(m) && mot.charAt(0) === mot.charAt(0).toLowerCase()) return m;
             return m.charAt(0).toUpperCase() + m.slice(1);
           }).join("");
         }).join("-");
