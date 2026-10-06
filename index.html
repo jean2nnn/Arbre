@@ -42,7 +42,9 @@
     .boite { position: absolute; box-sizing: border-box; border: 2px solid var(--vert); border-radius: 12px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 2px 5px rgba(0,0,0,0.18); }
     .boite.centre { background: #c8e6c9; border-width: 3px; }
     .boite .texte { width: 100%; height: 100%; box-sizing: border-box; padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; text-align: center; line-height: 1.15; overflow-wrap: anywhere; font-size: 0.8em; }
-    .boite .pm { position: absolute; right: -9px; top: -9px; width: 22px; height: 22px; padding: 0; margin: 0; border-radius: 11px; border: 1px solid var(--vert); background: white; color: var(--vert); font-size: 15px; line-height: 1; cursor: pointer; box-shadow: none; }
+    .pm { position: absolute; width: 24px; height: 24px; padding: 0; margin: 0; border-radius: 12px; background: white; font-size: 18px; font-weight: bold; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 5; }
+    .pm.plus { border: 2px solid #2e7d32; color: #2e7d32; }
+    .pm.moins { border: 2px solid #ef6c00; color: #ef6c00; }
   </style>
 </head>
 <body>
@@ -107,7 +109,7 @@
       <button onclick="elargir()">Élargir</button>
       <button onclick="toutAfficher()">Tout</button>
     </p>
-    <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Le petit + ou − d'une case développe ou replie sa branche. Élargir et Réduire affichent plus ou moins de parenté.</p>
+    <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Les + et − sont sur les traits : au-dessus d'une case pour ses parents, en dessous pour ses enfants, sur le côté ou entre deux conjoints pour le couple. Élargir et Réduire affichent plus ou moins de parenté.</p>
     <div id="arbre-zone"></div>
   </div>
 
@@ -130,6 +132,7 @@
     let historiqueArbre = [];
     let racineArbre = null;
     let ouverts = null;
+    let ancreArbre = null;
     let enveloppeArbre = null;
     let planArbre = null;
     let largeurArbre = 0;
@@ -758,47 +761,76 @@
       remplirChoix();
     }
 
-    function construireVoisins() {
+    function construireAretes() {
       const index = new Map();
       for (const p of personnes) index.set(String(p.id), p);
-      const voisins = new Map();
-      for (const p of personnes) voisins.set(p, []);
+      const aretes = [];
+      const groupes = new Map();
+      for (const p of personnes) groupes.set(p, { haut: [], bas: [], cote: [] });
+      const vus = new Set();
 
-      const lier = (a, b) => {
-        if (a === b) return;
-        if (!voisins.get(a).includes(b)) voisins.get(a).push(b);
-        if (!voisins.get(b).includes(a)) voisins.get(b).push(a);
+      const ajouter = (cle, a, b, ga, gb) => {
+        if (vus.has(cle)) return;
+        vus.add(cle);
+        const e = { cle: cle, a: a, b: b };
+        aretes.push(e);
+        groupes.get(a)[ga].push(e);
+        groupes.get(b)[gb].push(e);
       };
 
       for (const p of personnes) {
         for (const id of [p.pereId, p.mereId]) {
           const parent = index.get(String(id));
-          if (parent) lier(p, parent);
+          if (parent && parent !== p) ajouter("e" + p.id + ">" + parent.id, p, parent, "haut", "bas");
         }
         const c = index.get(String(p.conjointId));
-        if (c && String(c.conjointId) === String(p.id)) lier(p, c);
+        if (c && c !== p && String(c.conjointId) === String(p.id)) {
+          const cle = String(p.id) < String(c.id) ? "c" + p.id + "-" + c.id : "c" + c.id + "-" + p.id;
+          ajouter(cle, p, c, "cote", "cote");
+        }
       }
-      return voisins;
+      return { aretes: aretes, groupes: groupes };
     }
 
-    function calculerVisibles() {
-      const voisins = construireVoisins();
-      if (!ouverts) ouverts = new Set(voisins.get(racineArbre) || []);
+    function autre(e, p) {
+      return e.a === p ? e.b : e.a;
+    }
 
+    function toutesAretes(graphe, p) {
+      const g = graphe.groupes.get(p);
+      return g.haut.concat(g.bas, g.cote);
+    }
+
+    function parcourir(graphe, ouvertes) {
       const profondeur = new Map();
+      const arrivee = new Map();
       profondeur.set(racineArbre, 0);
-      const file = [racineArbre];
-      for (let i = 0; i < file.length; i++) {
-        const p = file[i];
-        if (p !== racineArbre && !ouverts.has(p)) continue;
-        for (const v of (voisins.get(p) || [])) {
+      const ordre = [racineArbre];
+      for (let i = 0; i < ordre.length; i++) {
+        const p = ordre[i];
+        for (const e of toutesAretes(graphe, p)) {
+          if (!ouvertes.has(e.cle)) continue;
+          const v = autre(e, p);
           if (!profondeur.has(v)) {
             profondeur.set(v, profondeur.get(p) + 1);
-            file.push(v);
+            arrivee.set(v, e);
+            ordre.push(v);
           }
         }
       }
-      return { visibles: file, profondeur: profondeur, voisins: voisins };
+      const rang = new Map(personnes.map((p, i) => [p, i]));
+      ordre.sort((x, y) => rang.get(x) - rang.get(y));
+      return { ordre: ordre, profondeur: profondeur, arrivee: arrivee };
+    }
+
+    function calculerVisibles() {
+      const graphe = construireAretes();
+      if (!ouverts) {
+        ouverts = new Set();
+        for (const e of toutesAretes(graphe, racineArbre)) ouverts.add(e.cle);
+      }
+      const r = parcourir(graphe, ouverts);
+      return { visibles: r.ordre, profondeur: r.profondeur, arrivee: r.arrivee, graphe: graphe };
     }
 
     function calculerCarte(liste) {
@@ -967,10 +999,15 @@
         afficherArbre();
         return;
       }
-      const ancienne = boitesArbre.get(personneCentrale);
-      if (ancienne) ancienne.className = "boite";
+      // la personne touchée devient le nouveau centre : les + / − se règlent à partir d'elle
+      const pos = positionsArbre.get(personne);
+      const zone = document.getElementById("arbre-zone");
+      if (pos) {
+        ancreArbre = { personne: personne, dx: pos.x * zoom - zone.scrollLeft, dy: pos.y * zoom - zone.scrollTop };
+      }
+      racineArbre = personne;
       personneCentrale = personne;
-      boite.className = "boite centre";
+      afficherArbre();
       defiler(personne, doux);
     }
 
@@ -1028,20 +1065,26 @@
       }
     }
 
-    function basculer(personne) {
-      if (ouverts.has(personne)) {
-        ouverts.delete(personne);
-      } else {
-        ouverts.add(personne);
+    function modifierLiens(personne, action) {
+      const pos = positionsArbre.get(personne);
+      const zone = document.getElementById("arbre-zone");
+      if (pos) {
+        ancreArbre = {
+          personne: personne,
+          dx: pos.x * zoom - zone.scrollLeft,
+          dy: pos.y * zoom - zone.scrollTop
+        };
       }
-      personneCentrale = personne;
+      action();
       afficherArbre();
     }
 
     function elargir() {
       if (personnes.length === 0 || !racineArbre) return;
       const etat = calculerVisibles();
-      for (const p of etat.visibles) ouverts.add(p);
+      for (const p of etat.visibles) {
+        for (const e of toutesAretes(etat.graphe, p)) ouverts.add(e.cle);
+      }
       afficherArbre();
     }
 
@@ -1049,15 +1092,12 @@
       if (personnes.length === 0 || !racineArbre) return;
       const etat = calculerVisibles();
       let max = 0;
-      for (const p of etat.visibles) {
-        if (p !== racineArbre && ouverts.has(p)) {
-          max = Math.max(max, etat.profondeur.get(p));
-        }
-      }
+      for (const d of etat.profondeur.values()) max = Math.max(max, d);
       if (max === 0) return;
       for (const p of etat.visibles) {
-        if (p !== racineArbre && ouverts.has(p) && etat.profondeur.get(p) === max) {
-          ouverts.delete(p);
+        if (etat.profondeur.get(p) !== max) continue;
+        for (const e of toutesAretes(etat.graphe, p)) {
+          if (etat.profondeur.get(autre(e, p)) < max) ouverts.delete(e.cle);
         }
       }
       afficherArbre();
@@ -1065,7 +1105,7 @@
 
     function toutAfficher() {
       if (personnes.length === 0) return;
-      ouverts = new Set(personnes);
+      ouverts = new Set(construireAretes().aretes.map(e => e.cle));
       afficherArbre();
     }
 
@@ -1124,7 +1164,8 @@
       const etat = calculerVisibles();
       const visibles = etat.visibles;
       const profondeur = etat.profondeur;
-      const voisins = etat.voisins;
+      const graphe = etat.graphe;
+      const arrivee = etat.arrivee;
       if (!personneCentrale || !profondeur.has(personneCentrale)) {
         personneCentrale = racineArbre;
       }
@@ -1226,27 +1267,6 @@
         texte.style.fontSize = longueur > 26 ? "0.68em" : longueur > 18 ? "0.74em" : "0.8em";
         div.appendChild(texte);
 
-        if (p !== racineArbre) {
-          const vois = voisins.get(p) || [];
-          let symbole = "";
-          if (ouverts.has(p)) {
-            if (vois.length > 1) symbole = "−";
-          } else if (vois.some(v => !profondeur.has(v))) {
-            symbole = "+";
-          }
-          if (symbole) {
-            const pm = document.createElement("button");
-            pm.className = "pm";
-            pm.textContent = symbole;
-            pm.addEventListener("pointerdown", e => e.stopPropagation());
-            pm.onclick = e => {
-              e.stopPropagation();
-              basculer(p);
-            };
-            div.appendChild(pm);
-          }
-        }
-
         let minuteur = null;
         let appuiLongFait = false;
         const arreterMinuteur = () => {
@@ -1279,6 +1299,102 @@
         plan.appendChild(div);
       }
 
+      // + et − sur les traits
+      function stub(x1, y1, x2, y2) {
+        const l = document.createElementNS(svgNS, "line");
+        l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+        l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+        l.setAttribute("stroke", "#9e9e9e");
+        l.setAttribute("stroke-width", "2");
+        l.setAttribute("stroke-dasharray", "4 3");
+        svg.appendChild(l);
+      }
+
+      function masque(cles) {
+        if (visibles.length > 300) return true;
+        const copie = new Set(ouverts);
+        for (const c of cles) copie.delete(c);
+        return parcourir(graphe, copie).ordre.length < visibles.length;
+      }
+
+      function poser(cx, cy, symbole, titre, personne, action) {
+        const b = document.createElement("button");
+        b.className = "pm " + (symbole === "+" ? "plus" : "moins");
+        b.textContent = symbole;
+        b.title = titre;
+        b.style.left = (cx - 12) + "px";
+        b.style.top = (cy - 12) + "px";
+        b.addEventListener("pointerdown", ev => ev.stopPropagation());
+        b.onclick = ev => {
+          ev.stopPropagation();
+          modifierLiens(personne, action);
+        };
+        plan.appendChild(b);
+      }
+
+      // un groupe de traits : + si quelqu'un est caché, sinon − si replier masque quelque chose
+      function boutonGroupe(E, proprietaires, cx, cy, titre, ancre, stubs) {
+        if (E.length === 0) return;
+        const cache = E.some(e => !profondeur.has(e.a) || !profondeur.has(e.b));
+        if (cache) {
+          if (stubs) stub(stubs[0], stubs[1], stubs[2], stubs[3]);
+          poser(cx, cy, "+", "Afficher " + titre, ancre, () => {
+            for (const e of E) ouverts.add(e.cle);
+          });
+          return;
+        }
+        const exclus = new Set();
+        for (const q of proprietaires) {
+          const a = arrivee.get(q);
+          if (a) exclus.add(a.cle);
+        }
+        const cles = E.filter(e => ouverts.has(e.cle) && !exclus.has(e.cle)).map(e => e.cle);
+        if (cles.length > 0 && masque(cles)) {
+          poser(cx, cy, "−", "Replier " + titre, ancre, () => {
+            for (const c of cles) ouverts.delete(c);
+          });
+        }
+      }
+
+      for (const p of visibles) {
+        const pos = positions.get(p);
+        const g = graphe.groupes.get(p);
+        const arCote = g.cote[0];
+        const conj = arCote ? autre(arCote, p) : null;
+        const conjVisible = conj && profondeur.has(conj);
+
+        // parents : au-dessus
+        boutonGroupe(g.haut, [p], pos.x, pos.y - 13, "les parents", p,
+          [pos.x, pos.y, pos.x, pos.y - 13]);
+
+        // conjoint
+        if (arCote) {
+          if (!conjVisible) {
+            const ym = pos.y + HAUTEUR_BOITE / 2;
+            boutonGroupe([arCote], [p], pos.x + LARGEUR_BOITE / 2 + 9, ym, "le conjoint", p,
+              [pos.x + LARGEUR_BOITE / 2, ym, pos.x + LARGEUR_BOITE / 2 + 9, ym]);
+          } else if (arCote.a === p) {
+            const pc = positions.get(conj);
+            const mx = (pos.x + pc.x) / 2;
+            boutonGroupe([arCote], [p, conj], mx, pos.y + HAUTEUR_BOITE / 2, "le conjoint", p, null);
+          }
+        }
+
+        // enfants : en dessous
+        if (conjVisible) {
+          if (arCote.a === p) {
+            const pc = positions.get(conj);
+            const mx = (pos.x + pc.x) / 2;
+            const E = g.bas.concat(graphe.groupes.get(conj).bas.filter(e => !g.bas.includes(e)));
+            boutonGroupe(E, [p, conj], mx, pos.y + HAUTEUR_BOITE / 2 + 25, "les enfants", p,
+              [mx, pos.y + HAUTEUR_BOITE / 2, mx, pos.y + HAUTEUR_BOITE / 2 + 25]);
+          }
+        } else {
+          boutonGroupe(g.bas, [p], pos.x, pos.y + HAUTEUR_BOITE + 13, "les enfants", p,
+            [pos.x, pos.y + HAUTEUR_BOITE, pos.x, pos.y + HAUTEUR_BOITE + 13]);
+        }
+      }
+
       const enveloppe = document.createElement("div");
       enveloppe.style.position = "relative";
       enveloppe.style.overflow = "hidden";
@@ -1292,7 +1408,14 @@
       largeurArbre = largeur;
       hauteurArbre = hauteur;
 
-      defiler(personneCentrale, false);
+      if (ancreArbre && positions.has(ancreArbre.personne)) {
+        const q = positions.get(ancreArbre.personne);
+        zone.scrollLeft = q.x * zoom - ancreArbre.dx;
+        zone.scrollTop = q.y * zoom - ancreArbre.dy;
+      } else {
+        defiler(personneCentrale, false);
+      }
+      ancreArbre = null;
     }
 
     const zoneArbre = document.getElementById("arbre-zone");
