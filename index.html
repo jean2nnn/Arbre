@@ -38,6 +38,15 @@
     #fiche { background: rgba(255,255,255,0.8); border-radius: 16px; padding: 4px 14px; margin-top: 10px; }
     #fiche button { margin: 3px 3px; }
     #recherche { width: 100%; box-sizing: border-box; padding: 10px 12px; }
+    .ligne-date { display: flex; gap: 6px; }
+    .ligne-date input { flex: 1; min-width: 0; width: auto !important; display: block; box-sizing: border-box; padding: 10px 8px; margin: 3px 0; }
+    .ligne-date input.j, .ligne-date input.m { flex: 0 0 22%; }
+    .bloc-date, .bloc-photo { margin: 8px 0; }
+    .bloc-date > div:first-child, .bloc-photo > div:first-child { font-size: 0.9em; color: #555; }
+    .vignette { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--vert); pointer-events: none; }
+    .portrait { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 3px solid var(--vert); display: block; margin: 10px 0 0; }
+    #apercu { background: rgba(255,255,255,0.85); border-radius: 14px; padding: 8px 14px; margin-top: 10px; min-height: 20px; }
+    #apercu .note { white-space: pre-wrap; background: #fff8e1; padding: 6px 10px; border-radius: 10px; margin: 6px 0; }
     #arbre-zone { overflow: auto; height: 58vh; border: 2px solid var(--vert-moyen); border-radius: 14px; background: #fffdf6 radial-gradient(circle, #e3ecd9 1px, transparent 1px) 0 0 / 22px 22px; touch-action: pan-x pan-y; }
     .boite { position: absolute; box-sizing: border-box; border: 2px solid var(--vert); border-radius: 12px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 2px 5px rgba(0,0,0,0.18); }
     .boite.centre { background: #c8e6c9; border-width: 3px; }
@@ -72,8 +81,19 @@
       <div id="suggestions" class="suggestions"></div>
       <input id="jeunefille" placeholder="Nom de jeune fille" autocomplete="off" oninput="suggerer(this, 'suggestions-jf', 'naissance')" onblur="setTimeout(() => cacherSuggestions('suggestions-jf'), 200)">
       <div id="suggestions-jf" class="suggestions"></div>
-      <input id="naissance" placeholder="Année de naissance" autocomplete="off">
-      <input id="deces" placeholder="Année de décès (si décédé)" autocomplete="off">
+      <div class="bloc-date"><div>Naissance (jour et mois facultatifs)</div>
+        <div class="ligne-date">
+          <input id="naissance-jour" class="j" placeholder="Jour" inputmode="numeric" maxlength="2" autocomplete="off">
+          <input id="naissance-mois" class="m" placeholder="Mois" inputmode="numeric" maxlength="2" autocomplete="off">
+          <input id="naissance" placeholder="Année" inputmode="numeric" autocomplete="off">
+        </div></div>
+      <div class="bloc-date"><div>Décès, si décédé (jour et mois facultatifs)</div>
+        <div class="ligne-date">
+          <input id="deces-jour" class="j" placeholder="Jour" inputmode="numeric" maxlength="2" autocomplete="off">
+          <input id="deces-mois" class="m" placeholder="Mois" inputmode="numeric" maxlength="2" autocomplete="off">
+          <input id="deces" placeholder="Année" inputmode="numeric" autocomplete="off">
+        </div></div>
+      <div id="choix-photo"></div>
       <div id="choix-pere"></div>
       <div id="choix-mere"></div>
       <div id="choix-conjoint"></div>
@@ -111,6 +131,7 @@
     </p>
     <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Les + et − sont sur les traits : au-dessus d'une case pour ses parents, en dessous pour ses enfants, sur le côté ou entre deux conjoints pour le couple. Élargir et Réduire affichent plus ou moins de parenté.</p>
     <div id="arbre-zone"></div>
+    <div id="apercu"></div>
   </div>
 
   <script>
@@ -118,6 +139,7 @@
     let derniereSuppression = null;
     let choixAjout = { pere: "", mere: "", conjoint: "" };
     let selecteurEnfants = null;
+    let selecteurPhoto = null;
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
 
@@ -133,6 +155,8 @@
     let racineArbre = null;
     let ouverts = null;
     let ancreArbre = null;
+    let fondArbre = null;
+    const MARGE_ARBRE = 160;
     let enveloppeArbre = null;
     let planArbre = null;
     let largeurArbre = 0;
@@ -156,7 +180,11 @@
     preparer();
 
     function sauvegarder() {
-      localStorage.setItem("personnes", JSON.stringify(personnes));
+      try {
+        localStorage.setItem("personnes", JSON.stringify(personnes));
+      } catch (e) {
+        alert("Stockage plein : impossible d'enregistrer. Retire quelques photos ou exporte ton arbre.");
+      }
     }
 
     function trouver(id) {
@@ -171,6 +199,137 @@
     function dates(p) {
       if (p.deces) return (p.naissance || "?") + "–" + p.deces;
       return p.naissance || "";
+    }
+
+    function chiffre(v, max) {
+      const n = parseInt(v, 10);
+      return (n >= 1 && n <= max) ? String(n) : "";
+    }
+
+    function formatDate(j, m, a) {
+      if (!m && !a) return "";
+      const p2 = x => String(x).padStart(2, "0");
+      return (m && j ? p2(j) + "/" : "") + (m ? p2(m) + "/" : "") + (a || "?");
+    }
+
+    function dateComplete(p, qui) {
+      return formatDate(p[qui + "Jour"], p[qui + "Mois"], p[qui]);
+    }
+
+    function ageInfo(p) {
+      const n = parseInt(p.naissance, 10);
+      if (isNaN(n)) return null;
+      let f, fm, fj;
+      if (p.deces) {
+        f = parseInt(p.deces, 10);
+        fm = parseInt(p.decesMois, 10) || 0;
+        fj = parseInt(p.decesJour, 10) || 0;
+      } else {
+        const now = new Date();
+        f = now.getFullYear(); fm = now.getMonth() + 1; fj = now.getDate();
+      }
+      if (isNaN(f)) return null;
+      const bm = parseInt(p.naissanceMois, 10) || 0;
+      const bj = parseInt(p.naissanceJour, 10) || 0;
+      let ans = f - n;
+      let exact = false;
+      if (bm && fm) {
+        if (fm < bm) { ans--; exact = true; }
+        else if (fm > bm) { exact = true; }
+        else if (bj && fj) { if (fj < bj) ans--; exact = true; }
+      }
+      return (ans >= 0 && ans <= 130) ? { ans: ans, exact: exact } : null;
+    }
+
+    function age(p) {
+      const i = ageInfo(p);
+      return i ? i.ans : null;
+    }
+
+    function reduirePhoto(fichier, quand) {
+      const lecteur = new FileReader();
+      lecteur.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const cote = Math.min(img.width, img.height);
+          const canvas = document.createElement("canvas");
+          canvas.width = 128;
+          canvas.height = 128;
+          canvas.getContext("2d").drawImage(img,
+            (img.width - cote) / 2, (img.height - cote) / 2, cote, cote, 0, 0, 128, 128);
+          quand(canvas.toDataURL("image/jpeg", 0.72));
+        };
+        img.onerror = () => alert("Image illisible.");
+        img.src = lecteur.result;
+      };
+      lecteur.readAsDataURL(fichier);
+    }
+
+    function creerPhoto(initiale) {
+      const etat = { data: initiale || "" };
+      const conteneur = document.createElement("div");
+      conteneur.className = "bloc-photo";
+      const titre = document.createElement("div");
+      titre.textContent = "Photo (facultative)";
+      const apercu = document.createElement("img");
+      apercu.className = "portrait";
+      const choisir = document.createElement("button");
+      choisir.type = "button";
+      choisir.textContent = "📷 Choisir une photo";
+      const retirer = document.createElement("button");
+      retirer.type = "button";
+      retirer.textContent = "Retirer";
+      const fichier = document.createElement("input");
+      fichier.type = "file";
+      fichier.accept = "image/*";
+      fichier.style.display = "none";
+      const maj = () => {
+        apercu.style.display = etat.data ? "block" : "none";
+        apercu.src = etat.data;
+        retirer.style.display = etat.data ? "inline-block" : "none";
+      };
+      choisir.onclick = () => fichier.click();
+      retirer.onclick = () => { etat.data = ""; maj(); };
+      fichier.onchange = () => {
+        if (fichier.files[0]) reduirePhoto(fichier.files[0], data => { etat.data = data; maj(); });
+        fichier.value = "";
+      };
+      maj();
+      conteneur.append(titre, apercu, choisir, retirer, fichier);
+      return { conteneur: conteneur, etat: etat };
+    }
+
+    function creerDate(etiquette, p, cle) {
+      const conteneur = document.createElement("div");
+      conteneur.className = "bloc-date";
+      const titre = document.createElement("div");
+      titre.textContent = etiquette + " (jour et mois facultatifs)";
+      const ligne = document.createElement("div");
+      ligne.className = "ligne-date";
+      const mk = (cls, ph, val) => {
+        const i = document.createElement("input");
+        i.className = cls;
+        i.placeholder = ph;
+        i.value = val || "";
+        i.inputMode = "numeric";
+        i.autocomplete = "off";
+        return i;
+      };
+      const jour = mk("j", "Jour", p[cle + "Jour"]);
+      const mois = mk("m", "Mois", p[cle + "Mois"]);
+      const annee = mk("", "Année", p[cle]);
+      jour.maxLength = 2;
+      mois.maxLength = 2;
+      ligne.append(jour, mois, annee);
+      conteneur.append(titre, ligne);
+      return { conteneur: conteneur, jour: jour, mois: mois, annee: annee };
+    }
+
+    function appliquerDate(p, cle, jour, mois, annee) {
+      const m = chiffre(mois, 12);
+      p[cle] = annee.trim();
+      p[cle + "Mois"] = m;
+      p[cle + "Jour"] = m ? chiffre(jour, 31) : "";
     }
 
     function libelle(p) {
@@ -277,6 +436,12 @@
           choixAjout[cle] = p ? p.id : "";
         }));
       }
+      if (!selecteurPhoto) {
+        selecteurPhoto = creerPhoto("");
+        const zonePhoto = document.getElementById("choix-photo");
+        zonePhoto.innerHTML = "";
+        zonePhoto.appendChild(selecteurPhoto.conteneur);
+      }
       if (!selecteurEnfants) {
         selecteurEnfants = creerEnfants([]);
         const zoneEnfants = document.getElementById("choix-enfants");
@@ -293,12 +458,18 @@
         prenom: prenom,
         nom: majusculesNom(document.getElementById("nom").value),
         nomJeuneFille: majusculesNom(document.getElementById("jeunefille").value),
-        naissance: document.getElementById("naissance").value,
-        deces: document.getElementById("deces").value,
         pereId: choixAjout.pere,
         mereId: choixAjout.mere,
-        conjointId: ""
+        conjointId: "",
+        photo: selecteurPhoto ? selecteurPhoto.etat.data : ""
       };
+      for (const [cle, prefixe] of [["naissance", "naissance"], ["deces", "deces"]]) {
+        appliquerDate(personne, cle,
+          document.getElementById(prefixe + "-jour").value,
+          document.getElementById(prefixe + "-mois").value,
+          document.getElementById(prefixe).value);
+      }
+      selecteurPhoto = null;
       personnes.push(personne);
       if (choixAjout.conjoint) definirConjoint(personne, choixAjout.conjoint);
       if (selecteurEnfants) rattacherEnfants(personne, selecteurEnfants.etat);
@@ -309,8 +480,9 @@
       document.getElementById("prenom").value = "";
       document.getElementById("nom").value = "";
       document.getElementById("jeunefille").value = "";
-      document.getElementById("naissance").value = "";
-      document.getElementById("deces").value = "";
+      for (const id of ["naissance", "deces", "naissance-jour", "naissance-mois", "deces-jour", "deces-mois"]) {
+        document.getElementById(id).value = "";
+      }
       choixAjout = { pere: "", mere: "", conjoint: "" };
       cacherSuggestions("suggestions");
       cacherSuggestions("suggestions-jf");
@@ -530,6 +702,12 @@
       const fiche = document.getElementById("fiche");
       fiche.innerHTML = "";
 
+      if (personne.photo) {
+        const img = document.createElement("img");
+        img.className = "portrait";
+        img.src = personne.photo;
+        fiche.appendChild(img);
+      }
       const titre = document.createElement("h3");
       titre.textContent = (personne.prenom + " " + personne.nom).trim();
       fiche.appendChild(titre);
@@ -539,14 +717,33 @@
         p.textContent = "Nom de jeune fille : " + personne.nomJeuneFille;
         fiche.appendChild(p);
       }
-      if (personne.naissance) {
+      const dn = dateComplete(personne, "naissance");
+      if (dn) {
         const p = document.createElement("p");
-        p.textContent = "Année de naissance : " + personne.naissance;
+        p.textContent = "Naissance : " + dn;
         fiche.appendChild(p);
       }
-      if (personne.deces) {
+      const dd = dateComplete(personne, "deces");
+      if (dd) {
         const p = document.createElement("p");
-        p.textContent = "Année de décès : " + personne.deces;
+        p.textContent = "Décès : " + dd;
+        fiche.appendChild(p);
+      }
+
+      const info = ageInfo(personne);
+      if (info) {
+        const p = document.createElement("p");
+        p.textContent = (personne.deces ? "Âge au décès : " : "Âge actuel : ") +
+          (info.exact ? "" : "environ ") + info.ans + " an" + (info.ans > 1 ? "s" : "");
+        fiche.appendChild(p);
+      }
+      if (personne.note) {
+        const p = document.createElement("p");
+        p.style.whiteSpace = "pre-wrap";
+        p.style.background = "#fff8e1";
+        p.style.padding = "8px 10px";
+        p.style.borderRadius = "10px";
+        p.textContent = "📝 " + personne.note;
         fiche.appendChild(p);
       }
 
@@ -616,11 +813,19 @@
       const prenom = creerChampEtiquete("Prénom", personne.prenom);
       const nom = creerChampEtiquete("Nom", personne.nom);
       const jeunefille = creerChampEtiquete("Jeune fille", personne.nomJeuneFille);
-      const naissance = creerChampEtiquete("Naissance", personne.naissance);
-      const deces = creerChampEtiquete("Décès", personne.deces);
+      const naissance = creerDate("Naissance", personne, "naissance");
+      const deces = creerDate("Décès", personne, "deces");
+      const photo = creerPhoto(personne.photo);
 
       fiche.append(titre, prenom.conteneur, nom.conteneur, jeunefille.conteneur,
-        naissance.conteneur, deces.conteneur);
+        naissance.conteneur, deces.conteneur, photo.conteneur);
+
+      const zoneNote = document.createElement("textarea");
+      zoneNote.placeholder = "Note (anecdote, métier, lieu de vie…)";
+      zoneNote.value = personne.note || "";
+      zoneNote.rows = 4;
+      zoneNote.style.cssText = "display:block;width:100%;box-sizing:border-box;padding:8px;margin:6px 0;font:inherit;border:1px solid #bcc9b8;border-radius:12px";
+      fiche.appendChild(zoneNote);
 
       const actuel = conjointDe(personne);
       const brouillon = {
@@ -651,8 +856,10 @@
         personne.prenom = majusculesNom(prenom.input.value);
         personne.nom = majusculesNom(nom.input.value);
         personne.nomJeuneFille = majusculesNom(jeunefille.input.value);
-        personne.naissance = naissance.input.value;
-        personne.deces = deces.input.value;
+        appliquerDate(personne, "naissance", naissance.jour.value, naissance.mois.value, naissance.annee.value);
+        appliquerDate(personne, "deces", deces.jour.value, deces.mois.value, deces.annee.value);
+        personne.photo = photo.etat.data;
+        personne.note = zoneNote.value.trim();
         personne.pereId = brouillon.pere;
         personne.mereId = brouillon.mere;
         rattacherEnfants(personne, selEnfants.etat);
@@ -984,8 +1191,8 @@
       if (!position) return;
       const zone = document.getElementById("arbre-zone");
       zone.scrollTo({
-        left: position.x * zoom - zone.clientWidth / 2,
-        top: (position.y + HAUTEUR_BOITE / 2) * zoom - zone.clientHeight / 2,
+        left: MARGE_ARBRE + position.x * zoom - zone.clientWidth / 2,
+        top: MARGE_ARBRE + (position.y + HAUTEUR_BOITE / 2) * zoom - zone.clientHeight / 2,
         behavior: doux ? "smooth" : "auto"
       });
     }
@@ -1003,7 +1210,7 @@
       const pos = positionsArbre.get(personne);
       const zone = document.getElementById("arbre-zone");
       if (pos) {
-        ancreArbre = { personne: personne, dx: pos.x * zoom - zone.scrollLeft, dy: pos.y * zoom - zone.scrollTop };
+        ancreArbre = { personne: personne, dx: MARGE_ARBRE + pos.x * zoom - zone.scrollLeft, dy: MARGE_ARBRE + pos.y * zoom - zone.scrollTop };
       }
       racineArbre = personne;
       personneCentrale = personne;
@@ -1071,8 +1278,8 @@
       if (pos) {
         ancreArbre = {
           personne: personne,
-          dx: pos.x * zoom - zone.scrollLeft,
-          dy: pos.y * zoom - zone.scrollTop
+          dx: MARGE_ARBRE + pos.x * zoom - zone.scrollLeft,
+          dy: MARGE_ARBRE + pos.y * zoom - zone.scrollTop
         };
       }
       action();
@@ -1116,14 +1323,16 @@
         return;
       }
       const zone = document.getElementById("arbre-zone");
-      const cx = (zone.scrollLeft + zone.clientWidth / 2) / zoom;
-      const cy = (zone.scrollTop + zone.clientHeight / 2) / zoom;
+      const cx = (zone.scrollLeft + zone.clientWidth / 2 - MARGE_ARBRE) / zoom;
+      const cy = (zone.scrollTop + zone.clientHeight / 2 - MARGE_ARBRE) / zoom;
       zoom = nouveau;
       enveloppeArbre.style.width = (largeurArbre * zoom) + "px";
       enveloppeArbre.style.height = (hauteurArbre * zoom) + "px";
       planArbre.style.transform = "scale(" + zoom + ")";
-      zone.scrollLeft = cx * zoom - zone.clientWidth / 2;
-      zone.scrollTop = cy * zoom - zone.clientHeight / 2;
+      fondArbre.style.width = (largeurArbre * zoom) + "px";
+      fondArbre.style.height = (hauteurArbre * zoom) + "px";
+      zone.scrollLeft = MARGE_ARBRE + cx * zoom - zone.clientWidth / 2;
+      zone.scrollTop = MARGE_ARBRE + cy * zoom - zone.clientHeight / 2;
     }
 
     function changerZoom(facteur) {
@@ -1140,11 +1349,52 @@
       ));
     }
 
+    function remplirApercu(p) {
+      const zone = document.getElementById("apercu");
+      zone.innerHTML = "";
+      if (!p) return;
+      if (p.photo) {
+        const img = document.createElement("img");
+        img.className = "portrait";
+        img.style.width = img.style.height = "56px";
+        img.style.float = "left";
+        img.style.margin = "0 10px 4px 0";
+        img.src = p.photo;
+        zone.appendChild(img);
+      }
+      const titre = document.createElement("strong");
+      titre.textContent = (p.prenom + " " + p.nom).trim();
+      zone.appendChild(titre);
+      const details = [];
+      if (p.nomJeuneFille) details.push("née " + p.nomJeuneFille);
+      const dn = dateComplete(p, "naissance");
+      const dd = dateComplete(p, "deces");
+      if (dn || dd) details.push((dn || "?") + (dd ? " – " + dd : ""));
+      const info = ageInfo(p);
+      if (info) details.push((p.deces ? "décédé(e) à " : "") + (info.exact ? "" : "environ ") + info.ans + " ans");
+      if (details.length) zone.append(" — " + details.join(", "));
+      const note = document.createElement("div");
+      if (p.note) {
+        note.className = "note";
+        note.textContent = "📝 " + p.note;
+      } else {
+        note.textContent = "Pas de note.";
+        note.style.color = "#777";
+        note.style.margin = "6px 0";
+      }
+      zone.appendChild(note);
+      const b = document.createElement("button");
+      b.textContent = "Ouvrir la fiche / modifier la note";
+      b.onclick = () => ouvrirFiche(p);
+      zone.appendChild(b);
+    }
+
     function afficherArbre() {
       const zone = document.getElementById("arbre-zone");
       const zoneAller = document.getElementById("choix-aller");
       zone.innerHTML = "";
       zoneAller.innerHTML = "";
+      document.getElementById("apercu").innerHTML = "";
       enveloppeArbre = null;
       boitesArbre = new Map();
       positionsArbre = new Map();
@@ -1256,7 +1506,8 @@
         const details = [];
         if (p.nomJeuneFille) details.push("née " + p.nomJeuneFille);
         const d = dates(p);
-        if (d) details.push(d);
+        const a = age(p);
+        if (d) details.push(a !== null ? d + " (" + a + " ans)" : d);
         for (const ligne of details) {
           const petit = document.createElement("span");
           petit.textContent = ligne;
@@ -1265,6 +1516,14 @@
 
         const longueur = Math.max(nomComplet.length, ...details.map(l => l.length));
         texte.style.fontSize = longueur > 26 ? "0.68em" : longueur > 18 ? "0.74em" : "0.8em";
+        if (p.photo) {
+          texte.style.paddingLeft = "52px";
+          texte.style.fontSize = longueur > 22 ? "0.64em" : longueur > 14 ? "0.7em" : "0.78em";
+          const vignette = document.createElement("img");
+          vignette.className = "vignette";
+          vignette.src = p.photo;
+          div.appendChild(vignette);
+        }
         div.appendChild(texte);
 
         let minuteur = null;
@@ -1401,17 +1660,26 @@
       enveloppe.style.width = (largeur * zoom) + "px";
       enveloppe.style.height = (hauteur * zoom) + "px";
       enveloppe.appendChild(plan);
-      zone.appendChild(enveloppe);
+      const fond = document.createElement("div");
+      fond.style.padding = MARGE_ARBRE + "px";
+      fond.style.boxSizing = "content-box";
+      fond.style.width = (largeur * zoom) + "px";
+      fond.style.height = (hauteur * zoom) + "px";
+      fond.appendChild(enveloppe);
+      zone.appendChild(fond);
+      fondArbre = fond;
 
       enveloppeArbre = enveloppe;
       planArbre = plan;
       largeurArbre = largeur;
       hauteurArbre = hauteur;
 
+      remplirApercu(personneCentrale);
+
       if (ancreArbre && positions.has(ancreArbre.personne)) {
         const q = positions.get(ancreArbre.personne);
-        zone.scrollLeft = q.x * zoom - ancreArbre.dx;
-        zone.scrollTop = q.y * zoom - ancreArbre.dy;
+        zone.scrollLeft = MARGE_ARBRE + q.x * zoom - ancreArbre.dx;
+        zone.scrollTop = MARGE_ARBRE + q.y * zoom - ancreArbre.dy;
       } else {
         defiler(personneCentrale, false);
       }
