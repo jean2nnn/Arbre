@@ -250,19 +250,122 @@
       const lecteur = new FileReader();
       lecteur.onload = () => {
         const img = new Image();
-        img.onload = () => {
-          const cote = Math.min(img.width, img.height);
-          const canvas = document.createElement("canvas");
-          canvas.width = 128;
-          canvas.height = 128;
-          canvas.getContext("2d").drawImage(img,
-            (img.width - cote) / 2, (img.height - cote) / 2, cote, cote, 0, 0, 128, 128);
-          quand(canvas.toDataURL("image/jpeg", 0.72));
-        };
+        img.onload = () => ouvrirRecadrage(img, quand);
         img.onerror = () => alert("Image illisible.");
         img.src = lecteur.result;
       };
       lecteur.readAsDataURL(fichier);
+    }
+
+    // fenêtre de recadrage : déplacer, zoomer, ou garder l'image entière avec des bandes
+    function ouvrirRecadrage(img, quand) {
+      const T = 256;
+      const contenir = T / Math.max(img.width, img.height);
+      const remplir = T / Math.min(img.width, img.height);
+      const etat = { echelle: contenir, ox: 0, oy: 0, fond: "#000000" };
+
+      const voile = document.createElement("div");
+      voile.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:1000;display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box";
+      const boite = document.createElement("div");
+      boite.style.cssText = "background:#fff;border-radius:16px;padding:14px;width:100%;max-width:310px;text-align:center;max-height:100%;overflow:auto";
+
+      const consigne = document.createElement("div");
+      consigne.textContent = "Glisse l'image pour la placer, zoome avec le curseur.";
+      consigne.style.cssText = "font-size:0.9em;margin-bottom:8px";
+
+      const canvas = document.createElement("canvas");
+      canvas.width = T;
+      canvas.height = T;
+      canvas.style.cssText = "width:" + T + "px;height:" + T + "px;max-width:100%;border:2px solid #2e7d32;border-radius:12px;touch-action:none;cursor:grab";
+
+      function dessiner(ctx, k) {
+        const w = img.width * etat.echelle * k;
+        const h = img.height * etat.echelle * k;
+        ctx.fillStyle = etat.fond;
+        ctx.fillRect(0, 0, T * k, T * k);
+        ctx.drawImage(img, T * k / 2 + etat.ox * k - w / 2, T * k / 2 + etat.oy * k - h / 2, w, h);
+      }
+      const maj = () => dessiner(canvas.getContext("2d"), 1);
+
+      let doigt = null;
+      canvas.addEventListener("pointerdown", e => {
+        doigt = { x: e.clientX, y: e.clientY, ox: etat.ox, oy: etat.oy };
+        canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener("pointermove", e => {
+        if (!doigt) return;
+        const r = canvas.getBoundingClientRect().width / T;
+        etat.ox = doigt.ox + (e.clientX - doigt.x) / r;
+        etat.oy = doigt.oy + (e.clientY - doigt.y) / r;
+        maj();
+      });
+      const fin = () => { doigt = null; };
+      canvas.addEventListener("pointerup", fin);
+      canvas.addEventListener("pointercancel", fin);
+
+      const curseur = document.createElement("input");
+      curseur.type = "range";
+      curseur.min = "0";
+      curseur.max = "100";
+      curseur.style.cssText = "width:100%;margin:8px 0";
+      const min = contenir * 0.5, max = Math.max(remplir, contenir) * 4;
+      const versCurseur = () => Math.round((etat.echelle - min) / (max - min) * 100);
+      curseur.value = versCurseur();
+      curseur.oninput = () => {
+        etat.echelle = min + (max - min) * curseur.value / 100;
+        maj();
+      };
+      const regler = ech => {
+        etat.echelle = ech;
+        etat.ox = 0;
+        etat.oy = 0;
+        curseur.value = versCurseur();
+        maj();
+      };
+
+      const ligneCadrage = document.createElement("div");
+      const entiere = document.createElement("button");
+      entiere.textContent = "Image entière (bandes)";
+      entiere.onclick = () => regler(contenir);
+      const carre = document.createElement("button");
+      carre.textContent = "Remplir le carré";
+      carre.onclick = () => regler(remplir);
+      ligneCadrage.append(entiere, carre);
+
+      const ligneFond = document.createElement("div");
+      ligneFond.append("Bandes : ");
+      for (const [nom, couleur] of [["Noir", "#000000"], ["Blanc", "#ffffff"], ["Gris", "#9e9e9e"]]) {
+        const b = document.createElement("button");
+        b.textContent = nom;
+        b.style.background = couleur;
+        b.style.color = couleur === "#000000" ? "#fff" : "#000";
+        b.style.border = "1px solid #888";
+        b.onclick = () => { etat.fond = couleur; maj(); };
+        ligneFond.appendChild(b);
+      }
+
+      const ligneFin = document.createElement("div");
+      ligneFin.style.marginTop = "10px";
+      const ok = document.createElement("button");
+      ok.textContent = "✔ Valider";
+      ok.onclick = () => {
+        const sortie = document.createElement("canvas");
+        sortie.width = 128;
+        sortie.height = 128;
+        dessiner(sortie.getContext("2d"), 128 / T);
+        document.body.removeChild(voile);
+        quand(sortie.toDataURL("image/jpeg", 0.75));
+      };
+      const non = document.createElement("button");
+      non.textContent = "Annuler";
+      non.style.background = "#9e9e9e";
+      non.onclick = () => document.body.removeChild(voile);
+      ligneFin.append(ok, non);
+
+      boite.append(consigne, canvas, curseur, ligneCadrage, ligneFond, ligneFin);
+      voile.appendChild(boite);
+      document.body.appendChild(voile);
+      maj();
     }
 
     function creerPhoto(initiale) {
