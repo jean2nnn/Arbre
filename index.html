@@ -49,6 +49,7 @@
     #apercu .note { white-space: pre-wrap; background: #fff8e1; padding: 6px 10px; border-radius: 10px; margin: 6px 0; }
     #arbre-zone { overflow: auto; height: 58vh; border: 2px solid var(--vert-moyen); border-radius: 14px; background: #fffdf6 radial-gradient(circle, #e3ecd9 1px, transparent 1px) 0 0 / 22px 22px; touch-action: pan-x pan-y; }
     .boite { position: absolute; box-sizing: border-box; border: 2px solid var(--vert); border-radius: 12px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 2px 5px rgba(0,0,0,0.18); }
+    .boite.fantome { border: 2px dashed #c2185b; background: #fce4ec; }
     .boite.centre { background: #c8e6c9; border-width: 3px; }
     .boite .texte { width: 100%; height: 100%; box-sizing: border-box; padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; text-align: center; line-height: 1.15; overflow-wrap: anywhere; font-size: 0.8em; }
     .pm { position: absolute; width: 24px; height: 24px; padding: 0; margin: 0; border-radius: 12px; background: white; font-size: 18px; font-weight: bold; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 5; }
@@ -97,7 +98,9 @@
       <div id="choix-pere"></div>
       <div id="choix-mere"></div>
       <div id="choix-conjoint"></div>
+      <div id="date-mariage1"></div>
       <div id="choix-conjoint2"></div>
+      <div id="date-mariage2"></div>
       <div id="choix-enfants"></div>
       <button onclick="ajouter()">Ajouter</button>
       <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
@@ -129,6 +132,7 @@
       <button onclick="reduire()">Réduire</button>
       <button onclick="elargir()">Élargir</button>
       <button onclick="toutAfficher()">Tout</button>
+      <button id="btn-mariage" onclick="basculerMariage()"></button>
     </p>
     <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Les + et − sont sur les traits : au-dessus d'une case pour ses parents, en dessous pour ses enfants, sur le côté ou entre deux conjoints pour le couple. Élargir et Réduire affichent plus ou moins de parenté.</p>
     <div id="arbre-zone"></div>
@@ -141,6 +145,7 @@
     let choixAjout = { pere: "", mere: "", conjoint: "", conjoint2: "" };
     let selecteurEnfants = null;
     let selecteurPhoto = null;
+    let datesMariage = null;
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
 
@@ -156,6 +161,8 @@
     let racineArbre = null;
     let ouverts = null;
     let ancreArbre = null;
+    let modeMariage = "etiquette";
+    try { modeMariage = localStorage.getItem("modeMariage") || "etiquette"; } catch (e) {}
     let fondArbre = null;
     const MARGE_ARBRE = 160;
     let enveloppeArbre = null;
@@ -200,6 +207,41 @@
     function conjointsDe(p) {
       return (p.conjoints || []).map(id => trouver(id)).filter(c =>
         c && c !== p && (c.conjoints || []).map(String).includes(String(p.id)));
+    }
+
+    // date de mariage, enregistrée des deux côtés : p.mariages[idConjoint] = {j, m, a}
+    function lireMariage(a, b) {
+      return (a.mariages && a.mariages[b.id]) || (b.mariages && b.mariages[a.id]) || null;
+    }
+
+    function ecrireMariage(a, b, d) {
+      const garde = d && (d.a || d.m || d.j);
+      for (const [x, y] of [[a, b], [b, a]]) {
+        if (garde) {
+          x.mariages = x.mariages || {};
+          x.mariages[y.id] = { j: d.j || "", m: d.m || "", a: d.a || "" };
+        } else if (x.mariages) {
+          delete x.mariages[y.id];
+        }
+      }
+    }
+
+    function texteMariage(a, b) {
+      const d = lireMariage(a, b);
+      return d ? formatDate(d.j, d.m, d.a) : "";
+    }
+
+    // champs jour / mois / année pour un mariage
+    function creerDateMariage(etiquette, a, b) {
+      const d = (a && b && lireMariage(a, b)) || {};
+      const champ = creerDate(etiquette, { mariage: d.a, mariageMois: d.m, mariageJour: d.j }, "mariage");
+      champ.lire = () => {
+        const tmp = {};
+        appliquerDate(tmp, "mariage", champ.jour.value, champ.mois.value, champ.annee.value);
+        return { j: tmp.mariageJour, m: tmp.mariageMois, a: tmp.mariage };
+      };
+      champ.vider = () => { champ.jour.value = ""; champ.mois.value = ""; champ.annee.value = ""; };
+      return champ;
     }
 
     function conjointDe(p) {
@@ -550,6 +592,17 @@
           choixAjout[cle] = p ? p.id : "";
         }));
       }
+      if (!datesMariage) {
+        datesMariage = [
+          creerDateMariage("Date du mariage"),
+          creerDateMariage("Date du 2e mariage")
+        ];
+        for (const [i, id] of ["date-mariage1", "date-mariage2"].entries()) {
+          const z = document.getElementById(id);
+          z.innerHTML = "";
+          z.appendChild(datesMariage[i].conteneur);
+        }
+      }
       if (!selecteurPhoto) {
         selecteurPhoto = creerPhoto("");
         const zonePhoto = document.getElementById("choix-photo");
@@ -586,7 +639,16 @@
       selecteurPhoto = null;
       personnes.push(personne);
       const idsConj = [choixAjout.conjoint, choixAjout.conjoint2].filter(x => x !== "" && x !== undefined);
-      if (idsConj.length > 0) definirConjoints(personne, idsConj);
+      if (idsConj.length > 0) {
+        definirConjoints(personne, idsConj);
+        idsConj.forEach((id, i) => {
+          const c = trouver(id);
+          if (c && datesMariage && conjointsDe(personne).includes(c)) {
+            ecrireMariage(personne, c, datesMariage[i === 0 ? 0 : 1].lire());
+          }
+        });
+      }
+      if (datesMariage) { datesMariage[0].vider(); datesMariage[1].vider(); }
       if (selecteurEnfants) rattacherEnfants(personne, selecteurEnfants.etat);
       selecteurEnfants = null;
       sauvegarder();
@@ -871,6 +933,14 @@
         ajouterParent(fiche, "Conjoint (1er mariage)", epoux[0].id);
         ajouterParent(fiche, "Conjoint (2e mariage)", epoux[1].id);
       }
+      // date de mariage à la suite de chaque ligne de conjoint
+      const lignesConj = Array.from(fiche.children).slice(-epoux.length);
+      if (epoux.length > 0) {
+        epoux.forEach((c, i) => {
+          const t = texteMariage(personne, c);
+          if (t) lignesConj[epoux.length === 1 ? 0 : i].append(" — marié(e) le " + t);
+        });
+      }
 
       const freres = fratrie(personne);
       const titreFreres = document.createElement("p");
@@ -965,9 +1035,13 @@
       fiche.appendChild(creerChoix("Conjoint", brouillon.conjoint, [personne], p => {
         brouillon.conjoint = p ? p.id : "";
       }));
+      const dateM1 = creerDateMariage("Date du mariage", personne, actuels[0]);
+      fiche.appendChild(dateM1.conteneur);
       fiche.appendChild(creerChoix("2e conjoint", brouillon.conjoint2, [personne], p => {
         brouillon.conjoint2 = p ? p.id : "";
       }));
+      const dateM2 = creerDateMariage("Date du 2e mariage", personne, actuels[1]);
+      fiche.appendChild(dateM2.conteneur);
 
       const exclusEnfants = [personne].concat(ancetres(personne), enfantsDe(personne));
       const selEnfants = creerEnfants(exclusEnfants);
@@ -992,6 +1066,10 @@
         if (nouveaux.map(String).join(",") !== avant.join(",")) {
           definirConjoints(personne, nouveaux);
         }
+        [[brouillon.conjoint, dateM1], [brouillon.conjoint2, dateM2]].forEach(([id, champ]) => {
+          const c = id !== "" && id !== undefined ? trouver(id) : null;
+          if (c && conjointsDe(personne).includes(c)) ecrireMariage(personne, c, champ.lire());
+        });
         sauvegarder();
         afficher();
         afficherFiche(personne);
@@ -1080,6 +1158,7 @@
       for (const ancien of conjointsDe(personne)) {
         if (!voulus.includes(ancien)) {
           ancien.conjoints = (ancien.conjoints || []).filter(x => String(x) !== String(personne.id));
+          ecrireMariage(personne, ancien, null);
         }
       }
       personne.conjoints = voulus.map(c => c.id);
@@ -1320,7 +1399,9 @@
             parentsDe(u.membres[1]).length > 0) {
           u.membres.reverse();
         }
-        for (const m of u.membres) {
+        // l'unité se place sous les parents d'un seul de ses membres (le « milieu » s'il y a deux mariages)
+        const candidats = u.membres.length === 3 ? [u.membres[1], u.membres[0], u.membres[2]] : u.membres;
+        for (const m of candidats) {
           const parents = parentsDe(m);
           if (parents.length === 0) continue;
           parents.sort((x, y) => gen.get(y) - gen.get(x));
@@ -1346,13 +1427,37 @@
       for (const u of unites) {
         if (u.parent) u.parent.enfants.push(u);
       }
+
+      // mariage entre générations différentes : une étiquette à côté de chaque conjoint
+      const fantomes = [];
+      const fantomeParCouple = new Map();
+      if (modeMariage === "etiquette") {
+        const vusCouples = new Set();
+        for (const p of liste) {
+          for (const s of conjointsLocaux(p)) {
+            if (memeGen(p, s)) continue;
+            const cle = String(p.id) < String(s.id) ? p.id + "|" + s.id : s.id + "|" + p.id;
+            if (vusCouples.has(cle)) continue;
+            vusCouples.add(cle);
+            const bas = gen.get(p) > gen.get(s) ? p : s;
+            const haut = bas === p ? s : p;
+            for (const [proprio, ref, principal] of [[bas, haut, true], [haut, bas, false]]) {
+              const f = { fantome: true, ref: ref, proprio: proprio, principal: principal, cle: cle };
+              gen.set(f, gen.get(proprio));
+              uniteDe.get(proprio).membres.push(f);
+              fantomes.push(f);
+              if (principal) fantomeParCouple.set(cle, f);
+            }
+          }
+        }
+      }
       const annee = u => {
-        const n = parseInt(u.membres[0].naissance, 10);
+        const n = parseInt((u.ancre || u.membres[0]).naissance, 10);
         return isNaN(n) ? 99999 : n;
       };
       // enfants rangés par mariage (parents de gauche d'abord), puis par année de naissance
       const rang = (u, enfant) => {
-        const idx = parentsDe(enfant.ancre).map(q => u.membres.indexOf(q)).filter(i => i >= 0);
+        const idx = parentsDe(enfant.ancre || enfant.membres[0]).map(q => u.membres.indexOf(q)).filter(i => i >= 0);
         return idx.length ? idx.reduce((x, y) => x + y, 0) / idx.length : 0;
       };
       for (const u of unites) {
@@ -1374,30 +1479,101 @@
         u.largeurSous = Math.max(largeurUnite(u), largeurEnfants(u));
       }
 
-      const positions = new Map();
-      function placer(u, xGauche) {
-        const xUnite = xGauche + (u.largeurSous - largeurUnite(u)) / 2;
-        u.membres.forEach((m, i) => {
-          positions.set(m, {
-            x: xUnite + LARGEUR_BOITE / 2 + i * (LARGEUR_BOITE + ECART_COUPLE),
-            y: 20 + gen.get(m) * HAUTEUR_LIGNE
+      // placement relatif d'un arbre de familles (une racine et ses descendants)
+      function arbreRelatif(racine) {
+        const pos = new Map();
+        const intervalles = [];
+        (function placer(u, xGauche) {
+          const xUnite = xGauche + (u.largeurSous - largeurUnite(u)) / 2;
+          u.membres.forEach((m, i) => {
+            const x = xUnite + LARGEUR_BOITE / 2 + i * (LARGEUR_BOITE + ECART_COUPLE);
+            pos.set(m, { x: x, y: 20 + gen.get(m) * HAUTEUR_LIGNE });
+            intervalles.push({ rang: gen.get(m), g: x - LARGEUR_BOITE / 2, d: x + LARGEUR_BOITE / 2 });
           });
-        });
-        let x = xGauche + (u.largeurSous - largeurEnfants(u)) / 2;
-        for (const e of u.enfants) {
-          placer(e, x);
-          x += e.largeurSous + ESPACE;
+          let x = xGauche + (u.largeurSous - largeurEnfants(u)) / 2;
+          for (const e of u.enfants) {
+            placer(e, x);
+            x += e.largeurSous + ESPACE;
+          }
+        })(racine, 0);
+        const unitesArbre = [];
+        (function collecter(u) { unitesArbre.push(u); u.enfants.forEach(collecter); })(racine);
+        return { pos: pos, intervalles: intervalles, unites: unitesArbre };
+      }
+
+      const positions = new Map();
+      const occupe = new Map();
+      const posees = new Set();
+      let droite = 0;
+
+      function enregistrer(arbre, dx) {
+        for (const [m, p] of arbre.pos) positions.set(m, { x: p.x + dx, y: p.y });
+        for (const iv of arbre.intervalles) {
+          if (!occupe.has(iv.rang)) occupe.set(iv.rang, []);
+          occupe.get(iv.rang).push([iv.g + dx, iv.d + dx]);
+          droite = Math.max(droite, iv.d + dx);
+        }
+        for (const u of arbre.unites) posees.add(u);
+      }
+
+      // les parents d'un conjoint (autre que celui sous lequel l'unité est rangée) sont placés au-dessus de lui
+      const parentsSatellites = u => {
+        const res = [];
+        for (const m of u.membres) {
+          if (m === u.ancre) continue;
+          const parents = parentsDe(m);
+          if (parents.length === 0) continue;
+          parents.sort((x, y) => gen.get(y) - gen.get(x));
+          const pu = uniteDe.get(parents[0]);
+          if (pu && pu !== u && !pu.parent && !posees.has(pu)) res.push({ membre: m, unite: pu });
+        }
+        return res;
+      };
+
+      for (const racine of unites) {
+        if (racine.parent || posees.has(racine)) continue;
+        mesurer(racine);
+        const premier = arbreRelatif(racine);
+        enregistrer(premier, droite > 0 ? droite + 3 * ESPACE : 20);
+        const file = [premier];
+        for (let k = 0; k < file.length; k++) {
+          for (const u of file[k].unites) {
+            for (const sat of parentsSatellites(u)) {
+              if (posees.has(sat.unite)) continue;
+              mesurer(sat.unite);
+              const rel = arbreRelatif(sat.unite);
+              const centre = rel.pos.get(sat.unite.membres[0]).x +
+                (largeurUnite(sat.unite) - LARGEUR_BOITE) / 2;
+              const cible = positions.get(sat.membre).x;
+              let dx = cible - centre;
+              const versDroite = sat.unite.membres.length > 0 &&
+                u.membres.indexOf(sat.membre) > (u.ancre ? u.membres.indexOf(u.ancre) : -1);
+              for (let essai = 0; essai < 60; essai++) {
+                let decale = false;
+                for (const iv of rel.intervalles) {
+                  for (const [og, od] of (occupe.get(iv.rang) || [])) {
+                    if (iv.g + dx < od + ESPACE && iv.d + dx > og - ESPACE) {
+                      dx = versDroite ? od + ESPACE - iv.g : og - ESPACE - iv.d;
+                      decale = true;
+                    }
+                  }
+                }
+                if (!decale) break;
+              }
+              enregistrer(rel, dx);
+              file.push(rel);
+            }
+          }
         }
       }
 
-      let xCourant = 20;
-      for (const u of unites) {
-        if (!u.parent) {
-          mesurer(u);
-          placer(u, xCourant);
-          xCourant += u.largeurSous + 3 * ESPACE;
-        }
+      let minX = Infinity;
+      for (const p of positions.values()) minX = Math.min(minX, p.x - LARGEUR_BOITE / 2);
+      if (isFinite(minX)) {
+        for (const p of positions.values()) p.x += 20 - minX;
+        droite += 20 - minX;
       }
+      const xCourant = droite + 0;
 
       let genMax = 0;
       for (const g of gen.values()) genMax = Math.max(genMax, g);
@@ -1407,6 +1583,8 @@
         unites: unites,
         lire: lire,
         conjointsLocaux: conjointsLocaux,
+        fantomes: fantomes,
+        fantomeParCouple: fantomeParCouple,
         largeur: xCourant + 20,
         hauteur: 20 + (genMax + 1) * HAUTEUR_LIGNE
       };
@@ -1496,6 +1674,12 @@
       if (confirm("Ouvrir la fiche de " + libelle(personne) + " ?")) {
         ouvrirFiche(personne);
       }
+    }
+
+    function basculerMariage() {
+      modeMariage = modeMariage === "etiquette" ? "trait" : "etiquette";
+      try { localStorage.setItem("modeMariage", modeMariage); } catch (e) {}
+      afficherArbre();
     }
 
     function modifierLiens(personne, action) {
@@ -1621,6 +1805,8 @@
       zone.innerHTML = "";
       zoneAller.innerHTML = "";
       document.getElementById("apercu").innerHTML = "";
+      document.getElementById("btn-mariage").textContent =
+        "Mariages entre générations : " + (modeMariage === "etiquette" ? "étiquettes" : "traits");
       enveloppeArbre = null;
       boitesArbre = new Map();
       positionsArbre = new Map();
@@ -1696,6 +1882,13 @@
 
       // géométrie du lien de mariage entre deux personnes affichées
       function geoLien(a, b) {
+        const fant = carte.fantomeParCouple.get(cleCouple(a, b));
+        if (fant) {
+          const po = positions.get(fant.proprio), pf = positions.get(fant);
+          const y = po.y + HAUTEUR_BOITE / 2;
+          return { adj: true, x1: po.x + LARGEUR_BOITE / 2, y1: y, x2: pf.x - LARGEUR_BOITE / 2, y2: y,
+                   mx: (po.x + pf.x) / 2, my: y, bas: y + 25, bx: (po.x + pf.x) / 2 };
+        }
         const pa = positions.get(a), pb = positions.get(b);
         if (adjacents.has(cleCouple(a, b))) {
           const gauche = pa.x < pb.x ? pa : pb;
@@ -1759,7 +1952,16 @@
             l.setAttribute("stroke", "#c2185b");
             l.setAttribute("stroke-width", "2");
             svg.appendChild(l);
-            if (num) texteSvg(geo.mx, geo.my - 16, num, 13, "#c2185b");
+            const dm = texteMariage(p, c);
+            const anM = dm ? dm.split("/").pop() : "";
+            let haut = geo.my - 16;
+            if (anM && anM !== "?") { texteSvg(geo.mx, haut, anM, 10, "#c2185b"); haut -= 13; }
+            if (num) texteSvg(geo.mx, haut, num, 13, "#c2185b");
+            if (dm) {
+              const tip = document.createElementNS(svgNS, "title");
+              tip.textContent = "Mariage : " + dm;
+              svg.lastChild.appendChild(tip);
+            }
           } else {
             const ch = document.createElementNS(svgNS, "path");
             ch.setAttribute("d", geo.chemin);
@@ -1870,6 +2072,39 @@
         plan.appendChild(div);
       }
 
+      for (const f of carte.fantomes) {
+        const pf = positions.get(f);
+        if (!pf) continue;
+        if (!f.principal) {
+          const po = positions.get(f.proprio);
+          const l = document.createElementNS(svgNS, "line");
+          const y = po.y + HAUTEUR_BOITE / 2;
+          l.setAttribute("x1", po.x + LARGEUR_BOITE / 2); l.setAttribute("y1", y);
+          l.setAttribute("x2", pf.x - LARGEUR_BOITE / 2); l.setAttribute("y2", y);
+          l.setAttribute("stroke", "#c2185b");
+          l.setAttribute("stroke-width", "2");
+          l.setAttribute("stroke-dasharray", "5 3");
+          svg.appendChild(l);
+        }
+        const d = document.createElement("div");
+        d.className = "boite fantome";
+        d.style.left = (pf.x - LARGEUR_BOITE / 2) + "px";
+        d.style.top = pf.y + "px";
+        d.style.width = LARGEUR_BOITE + "px";
+        d.style.height = HAUTEUR_BOITE + "px";
+        d.title = "Marié(e) à " + libelle(f.ref) + " — toucher pour y aller";
+        const t = document.createElement("div");
+        t.className = "texte";
+        const petit = document.createElement("span");
+        petit.textContent = "⚭ marié(e) à";
+        const nm = document.createElement("strong");
+        nm.textContent = (f.ref.prenom + " " + f.ref.nom).trim();
+        t.append(petit, nm);
+        d.appendChild(t);
+        d.onclick = () => centrer(f.ref);
+        plan.appendChild(d);
+      }
+
       // + et − sur les traits
       function stub(x1, y1, x2, y2) {
         const l = document.createElementNS(svgNS, "line");
@@ -1944,7 +2179,7 @@
           const conj = autre(e, p);
           if (!profondeur.has(conj)) {
             const ym = pos.y + HAUTEUR_BOITE / 2;
-            const sens = k === 0 ? 1 : -1;
+            const sens = g.cote.length === 2 ? (k === 0 ? -1 : 1) : 1;
             const x0 = pos.x + sens * LARGEUR_BOITE / 2;
             boutonGroupe([e], [p], x0 + sens * 9, ym, "le conjoint", p,
               [x0, ym, x0 + sens * 9, ym]);
