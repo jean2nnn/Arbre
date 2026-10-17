@@ -97,6 +97,7 @@
       <div id="choix-pere"></div>
       <div id="choix-mere"></div>
       <div id="choix-conjoint"></div>
+      <div id="choix-conjoint2"></div>
       <div id="choix-enfants"></div>
       <button onclick="ajouter()">Ajouter</button>
       <button id="annuler" onclick="annuler()" style="display:none">Annuler la suppression</button>
@@ -137,7 +138,7 @@
   <script>
     let personnes = JSON.parse(localStorage.getItem("personnes")) || [];
     let derniereSuppression = null;
-    let choixAjout = { pere: "", mere: "", conjoint: "" };
+    let choixAjout = { pere: "", mere: "", conjoint: "", conjoint2: "" };
     let selecteurEnfants = null;
     let selecteurPhoto = null;
 
@@ -175,6 +176,10 @@
     function preparer() {
       personnes.forEach((p, i) => {
         if (!p.id) p.id = Date.now() + i;
+        if (!Array.isArray(p.conjoints)) {
+          p.conjoints = p.conjointId ? [p.conjointId] : [];
+        }
+        delete p.conjointId;
       });
     }
     preparer();
@@ -191,9 +196,14 @@
       return personnes.find(x => String(x.id) === String(id));
     }
 
+    // conjoints réciproques, dans l'ordre des mariages (1er puis 2e)
+    function conjointsDe(p) {
+      return (p.conjoints || []).map(id => trouver(id)).filter(c =>
+        c && c !== p && (c.conjoints || []).map(String).includes(String(p.id)));
+    }
+
     function conjointDe(p) {
-      const c = trouver(p.conjointId);
-      return (c && String(c.conjointId) === String(p.id)) ? c : null;
+      return conjointsDe(p)[0] || null;
     }
 
     function dates(p) {
@@ -529,7 +539,8 @@
       const modeles = [
         ["pere", "Père"],
         ["mere", "Mère"],
-        ["conjoint", "Conjoint"]
+        ["conjoint", "Conjoint"],
+        ["conjoint2", "2e conjoint (si remarié)"]
       ];
       for (const [cle, etiquette] of modeles) {
         if (!trouver(choixAjout[cle])) choixAjout[cle] = "";
@@ -563,7 +574,7 @@
         nomJeuneFille: majusculesNom(document.getElementById("jeunefille").value),
         pereId: choixAjout.pere,
         mereId: choixAjout.mere,
-        conjointId: "",
+        conjoints: [],
         photo: selecteurPhoto ? selecteurPhoto.etat.data : ""
       };
       for (const [cle, prefixe] of [["naissance", "naissance"], ["deces", "deces"]]) {
@@ -574,7 +585,8 @@
       }
       selecteurPhoto = null;
       personnes.push(personne);
-      if (choixAjout.conjoint) definirConjoint(personne, choixAjout.conjoint);
+      const idsConj = [choixAjout.conjoint, choixAjout.conjoint2].filter(x => x !== "" && x !== undefined);
+      if (idsConj.length > 0) definirConjoints(personne, idsConj);
       if (selecteurEnfants) rattacherEnfants(personne, selecteurEnfants.etat);
       selecteurEnfants = null;
       sauvegarder();
@@ -586,7 +598,7 @@
       for (const id of ["naissance", "deces", "naissance-jour", "naissance-mois", "deces-jour", "deces-mois"]) {
         document.getElementById(id).value = "";
       }
-      choixAjout = { pere: "", mere: "", conjoint: "" };
+      choixAjout = { pere: "", mere: "", conjoint: "", conjoint2: "" };
       cacherSuggestions("suggestions");
       cacherSuggestions("suggestions-jf");
       afficher();
@@ -852,8 +864,13 @@
 
       ajouterParent(fiche, "Père", personne.pereId);
       ajouterParent(fiche, "Mère", personne.mereId);
-      const conjoint = conjointDe(personne);
-      ajouterParent(fiche, "Conjoint", conjoint ? conjoint.id : "");
+      const epoux = conjointsDe(personne);
+      if (epoux.length <= 1) {
+        ajouterParent(fiche, "Conjoint", epoux.length ? epoux[0].id : "");
+      } else {
+        ajouterParent(fiche, "Conjoint (1er mariage)", epoux[0].id);
+        ajouterParent(fiche, "Conjoint (2e mariage)", epoux[1].id);
+      }
 
       const freres = fratrie(personne);
       const titreFreres = document.createElement("p");
@@ -930,11 +947,12 @@
       zoneNote.style.cssText = "display:block;width:100%;box-sizing:border-box;padding:8px;margin:6px 0;font:inherit;border:1px solid #bcc9b8;border-radius:12px";
       fiche.appendChild(zoneNote);
 
-      const actuel = conjointDe(personne);
+      const actuels = conjointsDe(personne);
       const brouillon = {
         pere: personne.pereId || "",
         mere: personne.mereId || "",
-        conjoint: actuel ? actuel.id : ""
+        conjoint: actuels[0] ? actuels[0].id : "",
+        conjoint2: actuels[1] ? actuels[1].id : ""
       };
       const exclus = [personne].concat(descendants(personne));
 
@@ -946,6 +964,9 @@
       }));
       fiche.appendChild(creerChoix("Conjoint", brouillon.conjoint, [personne], p => {
         brouillon.conjoint = p ? p.id : "";
+      }));
+      fiche.appendChild(creerChoix("2e conjoint", brouillon.conjoint2, [personne], p => {
+        brouillon.conjoint2 = p ? p.id : "";
       }));
 
       const exclusEnfants = [personne].concat(ancetres(personne), enfantsDe(personne));
@@ -966,10 +987,10 @@
         personne.pereId = brouillon.pere;
         personne.mereId = brouillon.mere;
         rattacherEnfants(personne, selEnfants.etat);
-        const conjointActuel = conjointDe(personne);
-        const idActuel = conjointActuel ? conjointActuel.id : "";
-        if (String(idActuel) !== String(brouillon.conjoint)) {
-          definirConjoint(personne, brouillon.conjoint);
+        const nouveaux = [brouillon.conjoint, brouillon.conjoint2].filter(x => x !== "" && x !== undefined);
+        const avant = conjointsDe(personne).map(c => String(c.id));
+        if (nouveaux.map(String).join(",") !== avant.join(",")) {
+          definirConjoints(personne, nouveaux);
         }
         sauvegarder();
         afficher();
@@ -1047,17 +1068,37 @@
       }).join(" ");
     }
 
-    function definirConjoint(personne, idConjoint) {
-      const ancien = conjointDe(personne);
-      if (ancien) ancien.conjointId = "";
-      personne.conjointId = "";
+    // définit les conjoints (1er et 2e mariage) de façon réciproque
+    function definirConjoints(personne, ids) {
+      const voulus = [];
+      for (const id of ids) {
+        const c = trouver(id);
+        if (c && c !== personne && !voulus.includes(c)) voulus.push(c);
+      }
+      voulus.splice(2);
 
-      const nouveau = trouver(idConjoint);
-      if (nouveau) {
-        const ancienDuNouveau = conjointDe(nouveau);
-        if (ancienDuNouveau) ancienDuNouveau.conjointId = "";
-        nouveau.conjointId = personne.id;
-        personne.conjointId = nouveau.id;
+      for (const ancien of conjointsDe(personne)) {
+        if (!voulus.includes(ancien)) {
+          ancien.conjoints = (ancien.conjoints || []).filter(x => String(x) !== String(personne.id));
+        }
+      }
+      personne.conjoints = voulus.map(c => c.id);
+
+      for (const c of voulus) {
+        let liste = (c.conjoints || []).filter(x => String(x) !== String(personne.id));
+        const autres = conjointsDe(c).filter(x => x !== personne);
+        if (autres.length >= 2) {
+          if (!confirm(libelle(c) + " a déjà deux conjoints. Remplacer le 2e (" + libelle(autres[1]) + ") ?")) {
+            personne.conjoints = personne.conjoints.filter(x => String(x) !== String(c.id));
+            continue;
+          }
+          autres[1].conjoints = (autres[1].conjoints || []).filter(x => String(x) !== String(c.id));
+          liste = liste.filter(x => String(x) !== String(autres[1].id));
+        }
+        const dejaLie = (c.conjoints || []).map(String).includes(String(personne.id));
+        if (dejaLie) continue;
+        liste.push(personne.id);
+        c.conjoints = liste;
       }
       sauvegarder();
       afficher();
@@ -1093,10 +1134,12 @@
           const parent = index.get(String(id));
           if (parent && parent !== p) ajouter("e" + p.id + ">" + parent.id, p, parent, "haut", "bas");
         }
-        const c = index.get(String(p.conjointId));
-        if (c && c !== p && String(c.conjointId) === String(p.id)) {
-          const cle = String(p.id) < String(c.id) ? "c" + p.id + "-" + c.id : "c" + c.id + "-" + p.id;
-          ajouter(cle, p, c, "cote", "cote");
+        for (const id of (p.conjoints || [])) {
+          const c = index.get(String(id));
+          if (c && c !== p && (c.conjoints || []).map(String).includes(String(p.id))) {
+            const cle = String(p.id) < String(c.id) ? "c" + p.id + "-" + c.id : "c" + c.id + "-" + p.id;
+            ajouter(cle, p, c, "cote", "cote");
+          }
         }
       }
       return { aretes: aretes, groupes: groupes };
@@ -1147,73 +1190,146 @@
       const index = new Map();
       for (const p of liste) index.set(String(p.id), p);
       const lire = id => index.get(String(id));
-      const conjointLocal = p => {
-        const c = lire(p.conjointId);
-        return (c && c !== p && String(c.conjointId) === String(p.id)) ? c : null;
-      };
+      const conjointsLocaux = p => (p.conjoints || []).map(lire).filter(c =>
+        c && c !== p && (c.conjoints || []).map(String).includes(String(p.id)));
+      const parentsDe = p => [lire(p.pereId), lire(p.mereId)].filter(x => x && x !== p);
 
       const enfantsParPersonne = new Map();
       for (const p of liste) {
-        for (const id of [p.pereId, p.mereId]) {
-          const parent = lire(id);
-          if (parent && parent !== p) {
-            if (!enfantsParPersonne.has(parent)) enfantsParPersonne.set(parent, []);
-            const enfants = enfantsParPersonne.get(parent);
-            if (!enfants.includes(p)) enfants.push(p);
-          }
+        for (const parent of parentsDe(p)) {
+          if (!enfantsParPersonne.has(parent)) enfantsParPersonne.set(parent, []);
+          const enfants = enfantsParPersonne.get(parent);
+          if (!enfants.includes(p)) enfants.push(p);
         }
       }
 
-      const gen = new Map();
+      // 1) générations selon les liens parent-enfant uniquement
+      const comp = new Map();
+      const rel = new Map();
+      const composantes = [];
       for (const depart of liste) {
-        if (gen.has(depart)) continue;
-        gen.set(depart, 0);
-        const composante = [depart];
-        for (let i = 0; i < composante.length; i++) {
-          const p = composante[i];
-          const g = gen.get(p);
+        if (comp.has(depart)) continue;
+        const id = composantes.length;
+        const membres = [depart];
+        comp.set(depart, id);
+        rel.set(depart, 0);
+        for (let i = 0; i < membres.length; i++) {
+          const p = membres[i];
+          const g = rel.get(p);
           const voisins = [];
-          const pere = lire(p.pereId);
-          const mere = lire(p.mereId);
-          if (pere) voisins.push([pere, g - 1]);
-          if (mere) voisins.push([mere, g - 1]);
+          for (const parent of parentsDe(p)) voisins.push([parent, g - 1]);
           for (const e of (enfantsParPersonne.get(p) || [])) voisins.push([e, g + 1]);
-          const c = conjointLocal(p);
-          if (c) voisins.push([c, g]);
           for (const [v, gv] of voisins) {
-            if (!gen.has(v)) {
-              gen.set(v, gv);
-              composante.push(v);
+            if (!comp.has(v)) {
+              comp.set(v, id);
+              rel.set(v, gv);
+              membres.push(v);
             }
           }
         }
-        let min = Infinity;
-        for (const p of composante) min = Math.min(min, gen.get(p));
-        for (const p of composante) gen.set(p, gen.get(p) - min);
+        composantes.push(membres);
       }
 
+      // un enfant est toujours sous ses parents (utile si un oncle épouse sa nièce)
+      for (const membres of composantes) {
+        for (let tour = 0; tour < membres.length + 5; tour++) {
+          let change = false;
+          for (const c of membres) {
+            for (const parent of parentsDe(c)) {
+              if (rel.get(c) < rel.get(parent) + 1) {
+                rel.set(c, rel.get(parent) + 1);
+                change = true;
+              }
+            }
+          }
+          if (!change) break;
+        }
+      }
+
+      // 2) les familles reliées par un mariage sont alignées sur la même génération
+      const decalage = new Array(composantes.length).fill(null);
+      const groupeDe = new Array(composantes.length).fill(0);
+      let nbGroupes = 0;
+      for (let ci = 0; ci < composantes.length; ci++) {
+        if (decalage[ci] !== null) continue;
+        decalage[ci] = 0;
+        groupeDe[ci] = nbGroupes;
+        const file = [ci];
+        for (let k = 0; k < file.length; k++) {
+          const c = file[k];
+          for (const p of composantes[c]) {
+            for (const s of conjointsLocaux(p)) {
+              const cs = comp.get(s);
+              if (cs !== c && decalage[cs] === null) {
+                decalage[cs] = decalage[c] + rel.get(p) - rel.get(s);
+                groupeDe[cs] = nbGroupes;
+                file.push(cs);
+              }
+            }
+          }
+        }
+        nbGroupes++;
+      }
+      const gen = new Map();
+      const minGroupe = new Array(nbGroupes).fill(Infinity);
+      for (const p of liste) {
+        const g = decalage[comp.get(p)] + rel.get(p);
+        gen.set(p, g);
+        minGroupe[groupeDe[comp.get(p)]] = Math.min(minGroupe[groupeDe[comp.get(p)]], g);
+      }
+      for (const p of liste) gen.set(p, gen.get(p) - minGroupe[groupeDe[comp.get(p)]]);
+
+      // 3) unités : conjoints de même génération côte à côte (1er mariage à gauche, 2e à droite)
+      const memeGen = (a, b) => gen.get(a) === gen.get(b);
+      const voisinsG = (q, groupe) => conjointsLocaux(q).filter(x => groupe.includes(x) && memeGen(q, x));
+      const rangMariage = (p, c) => (p.conjoints || []).map(String).indexOf(String(c.id));
       const uniteDe = new Map();
       const unites = [];
       for (const p of liste) {
         if (uniteDe.has(p)) continue;
-        const c = conjointLocal(p);
-        const membres = (c && !uniteDe.has(c)) ? [p, c] : [p];
-        const unite = { membres: membres, parent: null, enfants: [], largeurSous: 0 };
+        const groupe = [p];
+        for (let i = 0; i < groupe.length; i++) {
+          for (const x of conjointsLocaux(groupe[i])) {
+            if (memeGen(groupe[i], x) && !groupe.includes(x) && !uniteDe.has(x)) groupe.push(x);
+          }
+        }
+        let depart = groupe.find(q => voisinsG(q, groupe).length <= 1) || groupe[0];
+        if (groupe.length === 3) {
+          const milieu = groupe.find(q => voisinsG(q, groupe).length === 2);
+          if (milieu) {
+            const fins = voisinsG(milieu, groupe).slice();
+            fins.sort((x, y) => rangMariage(milieu, x) - rangMariage(milieu, y));
+            depart = fins[0];
+          }
+        }
+        const membres = [depart];
+        for (let i = 0; i < membres.length; i++) {
+          const suivant = voisinsG(membres[i], groupe).find(x => !membres.includes(x));
+          if (suivant) membres.push(suivant);
+        }
+        for (const q of groupe) if (!membres.includes(q)) membres.push(q);
+
+        const unite = { membres: membres, parent: null, ancre: null, enfants: [], largeurSous: 0 };
         for (const m of membres) uniteDe.set(m, unite);
         unites.push(unite);
       }
 
-      const parentsDe = p => [lire(p.pereId), lire(p.mereId)].filter(x => x && x !== p);
       for (const u of unites) {
         if (u.membres.length === 2 &&
             parentsDe(u.membres[0]).length === 0 &&
             parentsDe(u.membres[1]).length > 0) {
           u.membres.reverse();
         }
-        const parents = parentsDe(u.membres[0]);
-        if (parents.length > 0) {
+        for (const m of u.membres) {
+          const parents = parentsDe(m);
+          if (parents.length === 0) continue;
+          parents.sort((x, y) => gen.get(y) - gen.get(x));
           const uniteParente = uniteDe.get(parents[0]);
-          if (uniteParente && uniteParente !== u) u.parent = uniteParente;
+          if (uniteParente && uniteParente !== u) {
+            u.parent = uniteParente;
+            u.ancre = m;
+          }
+          break;
         }
       }
 
@@ -1234,7 +1350,14 @@
         const n = parseInt(u.membres[0].naissance, 10);
         return isNaN(n) ? 99999 : n;
       };
-      for (const u of unites) u.enfants.sort((a, b) => annee(a) - annee(b));
+      // enfants rangés par mariage (parents de gauche d'abord), puis par année de naissance
+      const rang = (u, enfant) => {
+        const idx = parentsDe(enfant.ancre).map(q => u.membres.indexOf(q)).filter(i => i >= 0);
+        return idx.length ? idx.reduce((x, y) => x + y, 0) / idx.length : 0;
+      };
+      for (const u of unites) {
+        u.enfants.sort((x, y) => (rang(u, x) - rang(u, y)) || (annee(x) - annee(y)));
+      }
 
       const largeurUnite = u =>
         u.membres.length * LARGEUR_BOITE + (u.membres.length - 1) * ECART_COUPLE;
@@ -1283,7 +1406,7 @@
         positions: positions,
         unites: unites,
         lire: lire,
-        conjointLocal: conjointLocal,
+        conjointsLocaux: conjointsLocaux,
         largeur: xCourant + 20,
         hauteur: 20 + (genMax + 1) * HAUTEUR_LIGNE
       };
@@ -1550,7 +1673,7 @@
       plan.appendChild(svg);
 
       function tracer(x1, y1, x2, y2, couleur) {
-        const milieu = (y1 + y2) / 2;
+        const milieu = y2 - 25 > y1 ? y2 - 25 : (y1 + y2) / 2;
         const ligne = document.createElementNS(svgNS, "polyline");
         ligne.setAttribute("points",
           x1 + "," + y1 + " " + x1 + "," + milieu + " " +
@@ -1561,12 +1684,98 @@
         svg.appendChild(ligne);
       }
 
+      // paires de conjoints côte à côte (même unité, voisins)
+      const adjacents = new Set();
+      const cleCouple = (a, b) => String(a.id) < String(b.id) ? a.id + "|" + b.id : b.id + "|" + a.id;
       for (const u of carte.unites) {
-        if (u.membres.length === 2) {
-          const a = positions.get(u.membres[0]);
-          const b = positions.get(u.membres[1]);
-          const yMilieu = a.y + HAUTEUR_BOITE / 2;
-          tracer(a.x + LARGEUR_BOITE / 2, yMilieu, b.x - LARGEUR_BOITE / 2, yMilieu, "#c2185b");
+        for (let i = 0; i + 1 < u.membres.length; i++) {
+          const a = u.membres[i], b = u.membres[i + 1];
+          if (carte.conjointsLocaux(a).includes(b)) adjacents.add(cleCouple(a, b));
+        }
+      }
+
+      // géométrie du lien de mariage entre deux personnes affichées
+      function geoLien(a, b) {
+        const pa = positions.get(a), pb = positions.get(b);
+        if (adjacents.has(cleCouple(a, b))) {
+          const gauche = pa.x < pb.x ? pa : pb;
+          const droite = pa.x < pb.x ? pb : pa;
+          const y = pa.y + HAUTEUR_BOITE / 2;
+          return { adj: true, x1: gauche.x + LARGEUR_BOITE / 2, y1: y, x2: droite.x - LARGEUR_BOITE / 2, y2: y,
+                   mx: (pa.x + pb.x) / 2, my: y, bas: y + 25, bx: (pa.x + pb.x) / 2 };
+        }
+        const haut = pa.y <= pb.y ? pa : pb;
+        const bas = pa.y <= pb.y ? pb : pa;
+        const dx = bas.x - haut.x;
+        let chemin, mx, my;
+        if (Math.abs(dx) >= LARGEUR_BOITE / 2 + 20) {
+          // part du bas de la case du haut, rejoint le côté de la case du bas
+          const sens = dx > 0 ? 1 : -1;
+          const xs = haut.x, ya = haut.y + HAUTEUR_BOITE;
+          const xe = bas.x - sens * LARGEUR_BOITE / 2, yb = bas.y + HAUTEUR_BOITE / 2;
+          chemin = "M" + xs + "," + ya + " C" + xs + "," + yb + " " + xs + "," + yb + " " + xe + "," + yb;
+          mx = (7 * xs + xe) / 8; my = (ya + 7 * yb) / 8;
+        } else {
+          const ya = haut.y + HAUTEUR_BOITE, yb = bas.y;
+          const ym = (ya + yb) / 2;
+          chemin = "M" + haut.x + "," + ya + " C" + haut.x + "," + ym + " " + bas.x + "," + ym + " " + bas.x + "," + yb;
+          mx = (haut.x + bas.x) / 2; my = ym;
+        }
+        return { adj: false, chemin: chemin, mx: mx, my: my, bas: my + 26, bx: mx - 26 };
+      }
+
+      function numeroMariage(a, b) {
+        const na = conjointsDe(a).length, nb = conjointsDe(b).length;
+        if (na > 1) return String((a.conjoints || []).map(String).indexOf(String(b.id)) + 1);
+        if (nb > 1) return String((b.conjoints || []).map(String).indexOf(String(a.id)) + 1);
+        return "";
+      }
+
+      function texteSvg(x, y, contenu, taille, couleur) {
+        const t = document.createElementNS(svgNS, "text");
+        t.setAttribute("x", x);
+        t.setAttribute("y", y);
+        t.setAttribute("text-anchor", "middle");
+        t.setAttribute("font-size", taille);
+        t.setAttribute("font-weight", "bold");
+        t.setAttribute("fill", couleur);
+        t.textContent = contenu;
+        svg.appendChild(t);
+      }
+
+      const dejaMaries = new Set();
+      for (const p of visibles) {
+        for (const c of carte.conjointsLocaux(p)) {
+          if (!positions.has(c)) continue;
+          const cle = cleCouple(p, c);
+          if (dejaMaries.has(cle)) continue;
+          dejaMaries.add(cle);
+          const geo = geoLien(p, c);
+          const num = numeroMariage(p, c);
+          if (geo.adj) {
+            const l = document.createElementNS(svgNS, "line");
+            l.setAttribute("x1", geo.x1); l.setAttribute("y1", geo.y1);
+            l.setAttribute("x2", geo.x2); l.setAttribute("y2", geo.y2);
+            l.setAttribute("stroke", "#c2185b");
+            l.setAttribute("stroke-width", "2");
+            svg.appendChild(l);
+            if (num) texteSvg(geo.mx, geo.my - 16, num, 13, "#c2185b");
+          } else {
+            const ch = document.createElementNS(svgNS, "path");
+            ch.setAttribute("d", geo.chemin);
+            ch.setAttribute("fill", "none");
+            ch.setAttribute("stroke", "#c2185b");
+            ch.setAttribute("stroke-width", "2");
+            ch.setAttribute("stroke-dasharray", "7 4");
+            svg.appendChild(ch);
+            const rond = document.createElementNS(svgNS, "circle");
+            rond.setAttribute("cx", geo.mx); rond.setAttribute("cy", geo.my); rond.setAttribute("r", 11);
+            rond.setAttribute("fill", "white");
+            rond.setAttribute("stroke", "#c2185b");
+            rond.setAttribute("stroke-width", "2");
+            svg.appendChild(rond);
+            texteSvg(geo.mx, geo.my + 5, num ? num : "♥", 13, "#c2185b");
+          }
         }
       }
 
@@ -1574,10 +1783,10 @@
         const pos = positions.get(p);
         const pere = carte.lire(p.pereId);
         const mere = carte.lire(p.mereId);
-        if (pere && mere && pere !== mere && carte.conjointLocal(pere) === mere) {
-          const a = positions.get(pere);
-          const b = positions.get(mere);
-          tracer((a.x + b.x) / 2, (a.y + b.y) / 2 + HAUTEUR_BOITE / 2, pos.x, pos.y);
+        if (pere && mere && pere !== mere && positions.has(pere) && positions.has(mere) &&
+            carte.conjointsLocaux(pere).includes(mere)) {
+          const geo = geoLien(pere, mere);
+          tracer(geo.mx, geo.my, pos.x, pos.y);
         } else {
           for (const q of [pere, mere]) {
             if (q && q !== p) {
@@ -1718,43 +1927,44 @@
         }
       }
 
+      const aPourParent = (parent, enfant) =>
+        String(enfant.pereId) === String(parent.id) || String(enfant.mereId) === String(parent.id);
+
       for (const p of visibles) {
         const pos = positions.get(p);
         const g = graphe.groupes.get(p);
-        const arCote = g.cote[0];
-        const conj = arCote ? autre(arCote, p) : null;
-        const conjVisible = conj && profondeur.has(conj);
 
         // parents : au-dessus
         boutonGroupe(g.haut, [p], pos.x, pos.y - 13, "les parents", p,
           [pos.x, pos.y, pos.x, pos.y - 13]);
 
-        // conjoint
-        if (arCote) {
-          if (!conjVisible) {
+        // conjoints (1er et 2e mariage) et enfants de chaque couple
+        const partages = new Set();
+        g.cote.forEach((e, k) => {
+          const conj = autre(e, p);
+          if (!profondeur.has(conj)) {
             const ym = pos.y + HAUTEUR_BOITE / 2;
-            boutonGroupe([arCote], [p], pos.x + LARGEUR_BOITE / 2 + 9, ym, "le conjoint", p,
-              [pos.x + LARGEUR_BOITE / 2, ym, pos.x + LARGEUR_BOITE / 2 + 9, ym]);
-          } else if (arCote.a === p) {
-            const pc = positions.get(conj);
-            const mx = (pos.x + pc.x) / 2;
-            boutonGroupe([arCote], [p, conj], mx, pos.y + HAUTEUR_BOITE / 2, "le conjoint", p, null);
+            const sens = k === 0 ? 1 : -1;
+            const x0 = pos.x + sens * LARGEUR_BOITE / 2;
+            boutonGroupe([e], [p], x0 + sens * 9, ym, "le conjoint", p,
+              [x0, ym, x0 + sens * 9, ym]);
+            return;
           }
-        }
+          const geo = geoLien(p, conj);
+          const communs = g.bas.filter(x => aPourParent(conj, x.a)).concat(
+            graphe.groupes.get(conj).bas.filter(x => aPourParent(p, x.a) && !g.bas.includes(x)));
+          for (const x of communs) partages.add(x.cle);
+          if (e.a === p) {
+            boutonGroupe([e], [p, conj], geo.bx, geo.my, "le conjoint", p, null);
+            boutonGroupe(communs, [p, conj], geo.mx, geo.bas, "les enfants du couple", p,
+              [geo.mx, geo.my, geo.mx, geo.bas]);
+          }
+        });
 
-        // enfants : en dessous
-        if (conjVisible) {
-          if (arCote.a === p) {
-            const pc = positions.get(conj);
-            const mx = (pos.x + pc.x) / 2;
-            const E = g.bas.concat(graphe.groupes.get(conj).bas.filter(e => !g.bas.includes(e)));
-            boutonGroupe(E, [p, conj], mx, pos.y + HAUTEUR_BOITE / 2 + 25, "les enfants", p,
-              [mx, pos.y + HAUTEUR_BOITE / 2, mx, pos.y + HAUTEUR_BOITE / 2 + 25]);
-          }
-        } else {
-          boutonGroupe(g.bas, [p], pos.x, pos.y + HAUTEUR_BOITE + 13, "les enfants", p,
-            [pos.x, pos.y + HAUTEUR_BOITE, pos.x, pos.y + HAUTEUR_BOITE + 13]);
-        }
+        // enfants sans autre parent affiché
+        const reste = g.bas.filter(x => !partages.has(x.cle));
+        boutonGroupe(reste, [p], pos.x, pos.y + HAUTEUR_BOITE + 13, "les enfants", p,
+          [pos.x, pos.y + HAUTEUR_BOITE, pos.x, pos.y + HAUTEUR_BOITE + 13]);
       }
 
       const enveloppe = document.createElement("div");
