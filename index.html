@@ -47,6 +47,17 @@
     .portrait { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 3px solid var(--vert); display: block; margin: 10px 0 0; }
     #apercu { background: rgba(255,255,255,0.85); border-radius: 14px; padding: 8px 14px; margin-top: 10px; min-height: 20px; }
     #apercu .note { white-space: pre-wrap; background: #fff8e1; padding: 6px 10px; border-radius: 10px; margin: 6px 0; }
+    #barre-plein { display: none; }
+    body.plein { overflow: hidden; background: #fffdf6; }
+    body.plein #page-arbre > *:not(#arbre-zone):not(#barre-plein):not(#apercu) { display: none; }
+    body.plein #arbre-zone { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; border: none; border-radius: 0; z-index: 40; }
+    body.plein #barre-plein { display: flex; flex-wrap: wrap; align-items: center; position: fixed; top: 6px; left: 6px; z-index: 60; max-width: calc(100vw - 12px); background: rgba(255,255,255,0.88); border-radius: 22px; padding: 3px 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+    body.plein #barre-plein button { padding: 6px 11px; margin: 2px; }
+    body.plein #apercu { position: fixed; left: 6px; bottom: 6px; z-index: 60; max-width: min(380px, 62vw); max-height: 32vh; overflow: auto; font-size: 0.85em; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+    @media (orientation: landscape) and (min-width: 760px) {
+      body { max-width: 1200px; }
+      #arbre-zone { height: 64vh; }
+    }
     #arbre-zone { overflow: auto; height: 58vh; border: 2px solid var(--vert-moyen); border-radius: 14px; background: #fffdf6 radial-gradient(circle, #e3ecd9 1px, transparent 1px) 0 0 / 22px 22px; touch-action: pan-x pan-y; }
     .boite { position: absolute; box-sizing: border-box; border: 2px solid var(--vert); border-radius: 12px; background: white; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 2px 5px rgba(0,0,0,0.18); }
     .boite.fantome { border: 2px dashed #c2185b; background: #fce4ec; }
@@ -121,6 +132,7 @@
   <div id="page-arbre" style="display:none">
     <button onclick="aller('accueil')">← Accueil</button>
     <button onclick="retourArbre()">↩ Retour</button>
+    <button onclick="basculerPlein()">⛶ Plein écran</button>
     <h2>Arbre</h2>
     <div id="choix-aller"></div>
     <p>
@@ -135,6 +147,15 @@
       <button id="btn-mariage" onclick="basculerMariage()"></button>
     </p>
     <p>Touche une case pour la sélectionner, reste appuyé pour ouvrir sa fiche. Les + et − sont sur les traits : au-dessus d'une case pour ses parents, en dessous pour ses enfants, sur le côté ou entre deux conjoints pour le couple. Élargir et Réduire affichent plus ou moins de parenté.</p>
+    <div id="barre-plein">
+      <button onclick="basculerPlein()">✕ Quitter</button>
+      <button onclick="changerZoom(0.8)">−</button>
+      <button onclick="changerZoom(1.25)">+</button>
+      <button onclick="ajusterZoom()">Ajuster</button>
+      <button onclick="retourArbre()">↩</button>
+      <button onclick="reduire()">Réduire</button>
+      <button onclick="elargir()">Élargir</button>
+    </div>
     <div id="arbre-zone"></div>
     <div id="apercu"></div>
   </div>
@@ -172,7 +193,28 @@
     let boitesArbre = new Map();
     let positionsArbre = new Map();
 
+    function basculerPlein(force) {
+      const actif = typeof force === "boolean" ? force : !document.body.classList.contains("plein");
+      document.body.classList.toggle("plein", actif);
+      try {
+        if (actif && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else if (!actif && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+      } catch (e) {}
+      setTimeout(() => { if (personneCentrale) defiler(personneCentrale, false); }, 120);
+    }
+
+    window.addEventListener("resize", () => {
+      const page = document.getElementById("page-arbre");
+      if (page && page.style.display !== "none" && personneCentrale) {
+        setTimeout(() => defiler(personneCentrale, false), 200);
+      }
+    });
+
     function aller(nom) {
+      if (nom !== "arbre" && document.body.classList.contains("plein")) basculerPlein(false);
       for (const p of PAGES) {
         document.getElementById("page-" + p).style.display = (p === nom) ? "block" : "none";
       }
@@ -1282,81 +1324,81 @@
         }
       }
 
-      // 1) générations selon les liens parent-enfant uniquement
-      const comp = new Map();
-      const rel = new Map();
-      const composantes = [];
+      // Générations : un enfant est toujours une ligne sous ses parents.
+      // Deux conjoints sans ancêtre commun sont alignés sur la même ligne (on descend la famille la plus courte) ;
+      // s'ils ont un ancêtre commun (ex. oncle et nièce), chacun garde sa génération.
+      const racineDe = new Map();
+      for (const p of liste) racineDe.set(p, 0);
+      const genDe = new Map();
+      function calculerGen() {
+        genDe.clear();
+        const calcul = (p, pile) => {
+          if (genDe.has(p)) return genDe.get(p);
+          if (pile.has(p)) return racineDe.get(p);
+          pile.add(p);
+          const par = parentsDe(p);
+          const g = par.length ? Math.max(...par.map(q => calcul(q, pile))) + 1 : racineDe.get(p);
+          pile.delete(p);
+          genDe.set(p, g);
+          return g;
+        };
+        for (const p of liste) calcul(p, new Set());
+      }
+      const ancetresListe = (p, vus) => {
+        vus = vus || new Set();
+        for (const q of parentsDe(p)) {
+          if (!vus.has(q)) { vus.add(q); ancetresListe(q, vus); }
+        }
+        return vus;
+      };
+      const racinesDe = p => {
+        const anc = ancetresListe(p);
+        anc.add(p);
+        return Array.from(anc).filter(q => parentsDe(q).length === 0);
+      };
+      const partagentAncetre = (a, b) => {
+        const A = ancetresListe(a);
+        for (const q of ancetresListe(b)) if (A.has(q)) return true;
+        return A.has(b) || ancetresListe(b).has(a);
+      };
+      for (let tour = 0; tour < liste.length * 3 + 50; tour++) {
+        calculerGen();
+        let change = false;
+        for (const a of liste) {
+          for (const b of conjointsLocaux(a)) {
+            if (liste.indexOf(b) < liste.indexOf(a)) continue;
+            const ga = genDe.get(a), gb = genDe.get(b);
+            if (ga === gb) continue;
+            const bas = ga < gb ? a : b;
+            const ecart = Math.abs(ga - gb);
+            const sansParents = parentsDe(bas).length === 0;
+            const autreSansParents = parentsDe(bas === a ? b : a).length === 0;
+            if (!sansParents && !autreSansParents && partagentAncetre(a, b)) continue;
+            for (const rac of racinesDe(bas)) racineDe.set(rac, racineDe.get(rac) + ecart);
+            change = true;
+            break;
+          }
+          if (change) break;
+        }
+        if (!change) break;
+      }
+      calculerGen();
+      const gen = new Map(genDe);
+
+      // chaque groupe de personnes reliées commence à la ligne 0
+      const vuG = new Set();
       for (const depart of liste) {
-        if (comp.has(depart)) continue;
-        const id = composantes.length;
-        const membres = [depart];
-        comp.set(depart, id);
-        rel.set(depart, 0);
-        for (let i = 0; i < membres.length; i++) {
-          const p = membres[i];
-          const g = rel.get(p);
-          const voisins = [];
-          for (const parent of parentsDe(p)) voisins.push([parent, g - 1]);
-          for (const e of (enfantsParPersonne.get(p) || [])) voisins.push([e, g + 1]);
-          for (const [v, gv] of voisins) {
-            if (!comp.has(v)) {
-              comp.set(v, id);
-              rel.set(v, gv);
-              membres.push(v);
-            }
-          }
+        if (vuG.has(depart)) continue;
+        const groupe = [depart];
+        vuG.add(depart);
+        for (let i = 0; i < groupe.length; i++) {
+          const p = groupe[i];
+          const voisins = parentsDe(p).concat(enfantsParPersonne.get(p) || [], conjointsLocaux(p));
+          for (const v of voisins) if (!vuG.has(v)) { vuG.add(v); groupe.push(v); }
         }
-        composantes.push(membres);
+        const mini = Math.min(...groupe.map(p => gen.get(p)));
+        for (const p of groupe) gen.set(p, gen.get(p) - mini);
       }
-
-      // un enfant est toujours sous ses parents (utile si un oncle épouse sa nièce)
-      for (const membres of composantes) {
-        for (let tour = 0; tour < membres.length + 5; tour++) {
-          let change = false;
-          for (const c of membres) {
-            for (const parent of parentsDe(c)) {
-              if (rel.get(c) < rel.get(parent) + 1) {
-                rel.set(c, rel.get(parent) + 1);
-                change = true;
-              }
-            }
-          }
-          if (!change) break;
-        }
-      }
-
-      // 2) les familles reliées par un mariage sont alignées sur la même génération
-      const decalage = new Array(composantes.length).fill(null);
-      const groupeDe = new Array(composantes.length).fill(0);
-      let nbGroupes = 0;
-      for (let ci = 0; ci < composantes.length; ci++) {
-        if (decalage[ci] !== null) continue;
-        decalage[ci] = 0;
-        groupeDe[ci] = nbGroupes;
-        const file = [ci];
-        for (let k = 0; k < file.length; k++) {
-          const c = file[k];
-          for (const p of composantes[c]) {
-            for (const s of conjointsLocaux(p)) {
-              const cs = comp.get(s);
-              if (cs !== c && decalage[cs] === null) {
-                decalage[cs] = decalage[c] + rel.get(p) - rel.get(s);
-                groupeDe[cs] = nbGroupes;
-                file.push(cs);
-              }
-            }
-          }
-        }
-        nbGroupes++;
-      }
-      const gen = new Map();
-      const minGroupe = new Array(nbGroupes).fill(Infinity);
-      for (const p of liste) {
-        const g = decalage[comp.get(p)] + rel.get(p);
-        gen.set(p, g);
-        minGroupe[groupeDe[comp.get(p)]] = Math.min(minGroupe[groupeDe[comp.get(p)]], g);
-      }
-      for (const p of liste) gen.set(p, gen.get(p) - minGroupe[groupeDe[comp.get(p)]]);
 
       // 3) unités : conjoints de même génération côte à côte (1er mariage à gauche, 2e à droite)
       const memeGen = (a, b) => gen.get(a) === gen.get(b);
