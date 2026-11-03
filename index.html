@@ -72,6 +72,7 @@
 
   <div id="page-accueil">
     <h1>Mon arbre généalogique</h1>
+    <p id="compteur" style="text-align:center;font-size:1.1em;color:#1b5e20;margin:0"></p>
     <div class="menu">
       <button onclick="aller('ajouter')">Ajouter</button>
       <button onclick="aller('rechercher')">Rechercher</button>
@@ -166,6 +167,7 @@
     let choixAjout = { pere: "", mere: "", conjoint: "", conjoint2: "" };
     let selecteurEnfants = null;
     let selecteurPhoto = null;
+    const champsAjout = {};
     let datesMariage = null;
 
     const PAGES = ["accueil", "ajouter", "rechercher", "arbre"];
@@ -604,7 +606,42 @@
       }, 200);
 
       conteneur.append(nomChamp, champ, zone);
+
+      // pour remplir ou proposer automatiquement une personne depuis l'extérieur
+      conteneur.estVide = () => !trouver(choisiId);
+      conteneur.definir = p => {
+        choisiId = p.id;
+        champ.value = libelle(p);
+        zone.innerHTML = "";
+        quandChoisi(p);
+      };
+      conteneur.proposer = (liste, titre) => {
+        zone.innerHTML = "";
+        const t = document.createElement("div");
+        t.textContent = titre;
+        t.style.cssText = "font-size:0.85em;color:#555;margin:4px 0 2px";
+        zone.appendChild(t);
+        for (const p of liste) {
+          const b = document.createElement("button");
+          b.textContent = libelle(p);
+          b.onclick = () => conteneur.definir(p);
+          zone.appendChild(b);
+        }
+        const f = document.createElement("button");
+        f.className = "fermer";
+        f.textContent = "✕ Fermer (ou taper un autre nom)";
+        f.onclick = () => { zone.innerHTML = ""; };
+        zone.appendChild(f);
+      };
       return conteneur;
+    }
+
+    // père choisi → propose sa ou ses conjointes comme mère (et inversement)
+    function autoCompleterParent(parent, cible) {
+      if (!parent || !cible || !cible.estVide()) return;
+      const cs = conjointsDe(parent);
+      if (cs.length === 1) cible.definir(cs[0]);
+      else if (cs.length > 1) cible.proposer(cs, "Conjoints de " + parent.prenom + " " + parent.nom + " :");
     }
 
     function creerChampEtiquete(etiquette, valeur) {
@@ -630,9 +667,13 @@
         if (!trouver(choixAjout[cle])) choixAjout[cle] = "";
         const zone = document.getElementById("choix-" + cle);
         zone.innerHTML = "";
-        zone.appendChild(creerChoix(etiquette, choixAjout[cle], [], p => {
+        const el = creerChoix(etiquette, choixAjout[cle], [], p => {
           choixAjout[cle] = p ? p.id : "";
-        }));
+          if (p && cle === "pere") autoCompleterParent(p, champsAjout.mere);
+          if (p && cle === "mere") autoCompleterParent(p, champsAjout.pere);
+        });
+        champsAjout[cle] = el;
+        zone.appendChild(el);
       }
       if (!datesMariage) {
         datesMariage = [
@@ -1068,12 +1109,16 @@
       };
       const exclus = [personne].concat(descendants(personne));
 
-      fiche.appendChild(creerChoix("Père", brouillon.pere, exclus, p => {
+      let elMere = null, elPere = null;
+      elPere = creerChoix("Père", brouillon.pere, exclus, p => {
         brouillon.pere = p ? p.id : "";
-      }));
-      fiche.appendChild(creerChoix("Mère", brouillon.mere, exclus, p => {
+        if (p) autoCompleterParent(p, elMere);
+      });
+      elMere = creerChoix("Mère", brouillon.mere, exclus, p => {
         brouillon.mere = p ? p.id : "";
-      }));
+        if (p) autoCompleterParent(p, elPere);
+      });
+      fiche.append(elPere, elMere);
       fiche.appendChild(creerChoix("Conjoint", brouillon.conjoint, [personne], p => {
         brouillon.conjoint = p ? p.id : "";
       }));
@@ -1189,7 +1234,28 @@
     }
 
     // définit les conjoints (1er et 2e mariage) de façon réciproque
+    // quand deux personnes forment un couple : les enfants de l'une sans second parent sont proposés à l'autre
+    function completerEnfants(a, b) {
+      const aFaire = [];
+      for (const [parent, autre] of [[a, b], [b, a]]) {
+        for (const e of enfantsDe(parent)) {
+          const cle = String(e.pereId) === String(parent.id) ? "mereId" : "pereId";
+          if (!trouver(e[cle]) && e !== autre && !descendants(e).includes(autre)) {
+            aFaire.push({ enfant: e, cle: cle, autre: autre, parent: parent });
+          }
+        }
+      }
+      if (aFaire.length === 0) return;
+      const lignes = aFaire.slice(0, 10).map(x =>
+        "• " + (x.enfant.prenom + " " + x.enfant.nom).trim() + " (enfant de " + x.parent.prenom + " " + x.parent.nom +
+        ") → avec " + x.autre.prenom + " " + x.autre.nom);
+      if (aFaire.length > 10) lignes.push("… et " + (aFaire.length - 10) + " autre(s)");
+      if (!confirm("Ces enfants n'ont pas encore de second parent enregistré. Les rattacher au nouveau couple ?\n\n" + lignes.join("\n"))) return;
+      for (const x of aFaire) x.enfant[x.cle] = x.autre.id;
+    }
+
     function definirConjoints(personne, ids) {
+      const dejaConjoints = conjointsDe(personne);
       const voulus = [];
       for (const id of ids) {
         const c = trouver(id);
@@ -1220,12 +1286,16 @@
         if (dejaLie) continue;
         liste.push(personne.id);
         c.conjoints = liste;
+        if (!dejaConjoints.includes(c)) completerEnfants(personne, c);
       }
       sauvegarder();
       afficher();
     }
 
     function afficher() {
+      const n = personnes.length;
+      document.getElementById("compteur").textContent =
+        n === 0 ? "Aucune personne enregistrée" : "👥 " + n + " personne" + (n > 1 ? "s" : "") + " enregistrée" + (n > 1 ? "s" : "");
       afficherArbre();
       const visible = derniereSuppression ? "inline" : "none";
       document.getElementById("annuler").style.display = visible;
