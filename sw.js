@@ -1,6 +1,6 @@
 // Service worker de l'appli : fonctionne hors ligne et garde le moteur Firebase en mémoire.
-const CACHE = "arbre-v3";
-const FICHIERS = ["./", "index.html", "manifest.json", "icone-192.png", "icone-512.png"];
+const CACHE = "arbre-v4";
+const FICHIERS = ["./", "index.html", "app.js", "synchro.js", "manifest.json", "icone-192.png", "icone-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(
