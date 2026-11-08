@@ -37,7 +37,10 @@
     #resultats button { background: white; color: #1b5e20; border: 1px solid var(--vert-moyen); box-shadow: none; }
     #fiche { background: rgba(255,255,255,0.8); border-radius: 16px; padding: 4px 14px; margin-top: 10px; }
     #fiche button { margin: 3px 3px; }
-    #recherche { width: 100%; box-sizing: border-box; padding: 10px 12px; }
+    .champ-recherche { position: relative; }
+    #recherche { width: 100%; box-sizing: border-box; padding: 10px 44px 10px 12px; }
+    #effacer-recherche { display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; padding: 0; margin: 0; border-radius: 50%; background: #9e9e9e; color: white; font-size: 16px; line-height: 1; box-shadow: none; }
+    #effacer-recherche:active { transform: translateY(-50%) scale(0.95); }
     .ligne-date { display: flex; gap: 6px; }
     .ligne-date input { flex: 1; min-width: 0; width: auto !important; display: block; box-sizing: border-box; padding: 10px 8px; margin: 3px 0; }
     .ligne-date input.j, .ligne-date input.m { flex: 0 0 22%; }
@@ -66,6 +69,15 @@
     .pm { position: absolute; width: 24px; height: 24px; padding: 0; margin: 0; border-radius: 12px; background: white; font-size: 18px; font-weight: bold; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 5; }
     .pm.plus { border: 2px solid #2e7d32; color: #2e7d32; }
     .pm.moins { border: 2px solid #ef6c00; color: #ef6c00; }
+    #statut-sync { font-size: 0.9em; color: #37474f; margin: 6px 14px 0; cursor: pointer; }
+    #btn-deconnexion { display: none; font-size: 0.8em; padding: 4px 12px; }
+    #ecran-connexion { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; align-items: center; justify-content: center; overflow: auto; padding: 16px; box-sizing: border-box; background: linear-gradient(180deg, #e8f5e9 0%, #fbf7ee 60%, #fdf3e3 100%); }
+    #ecran-connexion .carte { width: 100%; max-width: 420px; background: rgba(255,255,255,0.92); border-radius: 20px; padding: 18px 18px 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); box-sizing: border-box; }
+    #ecran-connexion input { display: block; width: 100%; box-sizing: border-box; padding: 11px 12px; margin: 8px 0; }
+    #ecran-connexion button { display: block; width: 100%; margin: 8px 0; padding: 12px; }
+    #ecran-connexion button.secondaire { background: #fb8c00; }
+    #ecran-connexion button.lien { background: none; color: #37474f; box-shadow: none; text-decoration: underline; padding: 8px; }
+    #cx-message { min-height: 1.2em; font-size: 0.92em; margin: 4px 0; }
   </style>
 </head>
 <body>
@@ -73,11 +85,14 @@
   <div id="page-accueil">
     <h1>Mon arbre généalogique</h1>
     <p id="compteur" style="text-align:center;font-size:1.1em;color:#1b5e20;margin:0"></p>
+    <p id="statut-sync" onclick="if (window.synchro) synchro.ouvrirConnexion()"></p>
+    <p style="margin:2px 0 0"><button id="btn-deconnexion" onclick="if (window.synchro) synchro.deconnecter()">Se déconnecter</button></p>
     <div class="menu">
       <button onclick="aller('ajouter')">Ajouter</button>
       <button onclick="aller('rechercher')">Rechercher</button>
       <button onclick="aller('arbre')">Arbre</button>
     </div>
+    <p id="avertissement-connexion" style="text-align:center;font-size:0.95em;color:#b71c1c;background:rgba(255,255,255,0.8);border-radius:12px;padding:8px 12px;margin:10px 14px">⚠️ Privilégier les modifications avec une connexion Internet, sinon ça risque de disparaître !</p>
     <p>
       <button onclick="exporter()">Exporter</button>
       <button onclick="document.getElementById('fichier').click()">Importer</button>
@@ -125,7 +140,10 @@
     <button onclick="aller('accueil')">← Accueil</button>
     <button id="annuler-recherche" onclick="annuler()" style="display:none">Annuler la suppression</button>
     <h2>Rechercher</h2>
-    <input id="recherche" placeholder="Nom ou prénom" oninput="rechercher()">
+    <div class="champ-recherche">
+      <input id="recherche" placeholder="Nom ou prénom" oninput="rechercher()">
+      <button id="effacer-recherche" type="button" aria-label="Effacer la recherche" onclick="effacerRecherche()">✕</button>
+    </div>
     <div id="resultats"></div>
     <div id="fiche"></div>
   </div>
@@ -159,6 +177,29 @@
     </div>
     <div id="arbre-zone"></div>
     <div id="apercu"></div>
+  </div>
+
+  <div id="ecran-connexion">
+    <div class="carte">
+      <h2 style="margin-top:0">🌳 Arbre de la famille</h2>
+      <div id="cx-bloc-connexion">
+        <p style="margin:6px 0">Connecte-toi pour retrouver l'arbre commun sur tous tes appareils.</p>
+        <input id="cx-email" type="email" autocomplete="email" placeholder="Adresse e-mail" autocapitalize="none" autocorrect="off">
+        <input id="cx-mdp" type="password" autocomplete="current-password" placeholder="Mot de passe (6 caractères minimum)">
+        <button id="cx-connecter" type="button">Se connecter</button>
+        <button id="cx-creer" type="button" class="secondaire">Créer mon compte</button>
+        <button id="cx-oublie" type="button" class="lien">Mot de passe oublié ?</button>
+        <button id="cx-plus-tard" type="button" class="lien">Continuer sans connexion</button>
+      </div>
+      <div id="cx-bloc-verif" style="display:none">
+        <p>Un e-mail de vérification a été envoyé à <b id="cx-verif-email"></b>.</p>
+        <p>Ouvre-le, touche le lien (pense à regarder dans les courriers indésirables), puis reviens ici.</p>
+        <button id="cx-verifie" type="button">J'ai vérifié mon adresse</button>
+        <button id="cx-renvoyer" type="button" class="secondaire">Renvoyer l'e-mail</button>
+        <button id="cx-autre" type="button" class="lien">Utiliser une autre adresse</button>
+      </div>
+      <p id="cx-message"></p>
+    </div>
   </div>
 
   <script>
@@ -240,6 +281,9 @@
         localStorage.setItem("personnes", JSON.stringify(personnes));
       } catch (e) {
         alert("Stockage plein : impossible d'enregistrer. Retire quelques photos ou exporte ton arbre.");
+      }
+      if (window.synchro) {
+        try { window.synchro.apresSauvegarde(); } catch (e) { console.error(e); }
       }
     }
 
@@ -792,7 +836,10 @@
         try {
           const donnees = JSON.parse(lecteur.result);
           if (!Array.isArray(donnees)) throw new Error("format");
-          if (!confirm("Remplacer l'arbre actuel par ce fichier ?")) return;
+          const enLigne = window.synchro && window.synchro.actif();
+          if (!confirm(enLigne
+            ? "ATTENTION : l'arbre est partagé en ligne avec toute la famille.\n\nRemplacer l'arbre actuel — y compris l'arbre en ligne — par ce fichier ?"
+            : "Remplacer l'arbre actuel par ce fichier ?")) return;
           personnes = donnees;
           preparer();
           derniereSuppression = null;
@@ -921,7 +968,16 @@
       return bouton;
     }
 
+    function effacerRecherche() {
+      const champ = document.getElementById("recherche");
+      champ.value = "";
+      rechercher();
+      champ.focus();
+    }
+
     function rechercher() {
+      document.getElementById("effacer-recherche").style.display =
+        document.getElementById("recherche").value !== "" ? "block" : "none";
       const saisie = normaliser(document.getElementById("recherche").value.trim());
       const zone = document.getElementById("resultats");
       zone.innerHTML = "";
@@ -1778,6 +1834,7 @@
     function ouvrirFiche(personne) {
       aller("rechercher");
       document.getElementById("recherche").value = "";
+      document.getElementById("effacer-recherche").style.display = "none";
       document.getElementById("resultats").innerHTML = "";
       afficherFiche(personne);
     }
@@ -2379,5 +2436,16 @@
       navigator.serviceWorker.register("sw.js");
     }
   </script>
-</body>
-</html>
+
+  <script>
+  // ===== Synchronisation en ligne (Firebase) =====
+  // Principe : l'appli marche toujours avec les données locales ; quand on est connecté,
+  // chaque personne est un document Firestore, et seuls les champs modifiés sont envoyés.
+  (function () {
+    "use strict";
+    const VERSION_SDK = "10.14.1";
+    const firebaseConfig = {
+      apiKey: "AIzaSyC9K1dlZD0tu5n7Pd-dQOyn1ITfGgKqz7w",
+      authDomain: "arbre-genealogique-ec322.firebaseapp.com",
+      projectId: "arbre-genealogique-ec322",
+      storageBuck
