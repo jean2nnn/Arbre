@@ -18,6 +18,12 @@
     const WEB3FORMS_CLE = "0adff0fe-72e0-46ce-a664-cea8a9c67911";
     const ADRESSE_APPLI = "https://jean2nnn.github.io/Arbre/";
 
+    // E-mail automatique « ton accès est validé » (service gratuit EmailJS), à renseigner plus tard.
+    // Tant que ces trois lignes sont vides, le bouton « Prévenir » ouvre ta messagerie avec le message prêt.
+    const EMAILJS_SERVICE = "";
+    const EMAILJS_MODELE = "";
+    const EMAILJS_CLE = "";
+
     const CLE_INIT = "syncInit";
     const CLE_BASE = "baseSynchro";
     const CLE_COPIE = "sauvegardeAvantSynchro";
@@ -608,7 +614,7 @@
       const za = el("adm-acces");
       za.textContent = S.acces.length ? "" : "Personne d'autre pour l'instant.";
       for (const a of S.acces) {
-        za.appendChild(ligneAdmin(a.nom || a.id, a.id, [["Retirer l'accès", () => retirerAcces(a), "secondaire"]]));
+        za.appendChild(ligneAdmin(a.nom || a.id, a.id, [["Prévenir", () => prevenirPersonne(a)], ["Retirer l'accès", () => retirerAcces(a), "secondaire"]]));
       }
     }
 
@@ -620,11 +626,45 @@
     }
     function fermerAdmin() { S.adminOuvert = false; el("ecran-admin").style.display = "none"; }
 
+    function textePrevenir(nom) {
+      return {
+        sujet: "Ton accès à l'arbre de la famille est validé",
+        message: "Bonjour" + (nom ? " " + nom : "") + ",\n\nTon accès à l'arbre généalogique de la famille est validé. " +
+          "Ouvre l'application ou ce lien : " + ADRESSE_APPLI + "\nTon arbre se chargera automatiquement.\n\nJean"
+      };
+    }
+
+    // Envoie le message d'accès validé : direct si EmailJS est configuré, sinon brouillon dans la messagerie
+    async function prevenirPersonne(p) {
+      const t = textePrevenir(p.nom);
+      if (EMAILJS_SERVICE && EMAILJS_MODELE && EMAILJS_CLE) {
+        try {
+          const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              service_id: EMAILJS_SERVICE, template_id: EMAILJS_MODELE, user_id: EMAILJS_CLE,
+              template_params: { to_email: p.id, to_name: p.nom || "", sujet: t.sujet, message: t.message, lien: ADRESSE_APPLI }
+            })
+          });
+          if (r.ok) { alert("✉️ Message envoyé à " + p.id); return; }
+          console.warn("EmailJS", r.status);
+        } catch (e) { console.warn("EmailJS", e); }
+        alert("L'envoi automatique a échoué : ta messagerie va s'ouvrir avec le message prêt à envoyer.");
+      }
+      const a = document.createElement("a");
+      a.href = "mailto:" + p.id + "?subject=" + encodeURIComponent(t.sujet) + "&body=" + encodeURIComponent(t.message);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
     async function autoriser(d) {
       try {
         await S.F.setDoc(S.F.doc(S.db, "acces", d.id), { email: d.id, nom: d.nom || "", date: new Date().toISOString() });
         await S.F.deleteDoc(S.F.doc(S.db, "demandes", d.id));
-      } catch (e) { alert("Erreur : " + ((e && e.code) || "inconnue")); }
+      } catch (e) { alert("Erreur : " + ((e && e.code) || "inconnue")); return; }
+      if (confirm("Accès autorisé ✔\n\nPrévenir " + (d.nom || d.id) + " par e-mail maintenant ?")) prevenirPersonne({ id: d.id, nom: d.nom });
     }
     async function refuser(d) {
       if (!confirm("Refuser la demande de " + (d.nom || d.id) + " ?")) return;
