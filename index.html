@@ -78,6 +78,12 @@
     #ecran-connexion button.secondaire { background: #fb8c00; }
     #ecran-connexion button.lien { background: none; color: #37474f; box-shadow: none; text-decoration: underline; padding: 8px; }
     #cx-message { min-height: 1.2em; font-size: 0.92em; margin: 4px 0; }
+    #btn-demandes { display: none; }
+    #ecran-admin { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; align-items: flex-start; justify-content: center; overflow: auto; padding: 16px; box-sizing: border-box; background: linear-gradient(180deg, #e8f5e9 0%, #fbf7ee 60%, #fdf3e3 100%); }
+    #ecran-admin .carte { width: 100%; max-width: 520px; background: rgba(255,255,255,0.92); border-radius: 20px; padding: 18px 18px 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); box-sizing: border-box; }
+    .adm-ligne { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e6dc; }
+    .adm-ligne > div { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+    .adm-ligne button.secondaire { background: #fb8c00; }
   </style>
 </head>
 <body>
@@ -87,6 +93,7 @@
     <p id="compteur" style="text-align:center;font-size:1.1em;color:#1b5e20;margin:0"></p>
     <p id="statut-sync" onclick="if (window.synchro) synchro.ouvrirConnexion()"></p>
     <p style="margin:2px 0 0"><button id="btn-deconnexion" onclick="if (window.synchro) synchro.deconnecter()">Se déconnecter</button></p>
+    <p style="margin:6px 0 0"><button id="btn-demandes" onclick="if (window.synchro) synchro.ouvrirAdmin()">🔔 Accès à l'arbre</button></p>
     <div class="menu">
       <button onclick="aller('ajouter')">Ajouter</button>
       <button onclick="aller('rechercher')">Rechercher</button>
@@ -198,7 +205,25 @@
         <button id="cx-renvoyer" type="button" class="secondaire">Renvoyer l'e-mail</button>
         <button id="cx-autre" type="button" class="lien">Utiliser une autre adresse</button>
       </div>
+      <div id="cx-bloc-acces" style="display:none">
+        <p>Ton adresse <b id="cx-acces-email"></b> n'a pas encore accès à l'arbre de la famille.</p>
+        <input id="cx-nom" type="text" autocomplete="name" placeholder="Ton prénom et ton nom">
+        <button id="cx-demander" type="button">Demander l'accès</button>
+        <button id="cx-acces-autre" type="button" class="lien">Utiliser une autre adresse</button>
+        <button id="cx-acces-fermer" type="button" class="lien">Fermer</button>
+      </div>
       <p id="cx-message"></p>
+    </div>
+  </div>
+
+  <div id="ecran-admin">
+    <div class="carte">
+      <h2 style="margin-top:0">🔔 Accès à l'arbre</h2>
+      <h3>Demandes en attente</h3>
+      <div id="adm-demandes"></div>
+      <h3>Personnes autorisées</h3>
+      <div id="adm-acces"></div>
+      <button id="adm-fermer" type="button" style="margin-top:14px">Fermer</button>
     </div>
   </div>
 
